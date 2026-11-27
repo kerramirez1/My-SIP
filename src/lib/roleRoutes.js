@@ -17,6 +17,7 @@ export const ROLE_CONFIG = {
         icon: 'accomplishments',
       },
       { to: '/intern/tasks', label: 'Tasks', icon: 'tasks' },
+      { to: '/intern/profile', label: 'Profile', icon: 'profile' },
     ],
   },
   supervisor: {

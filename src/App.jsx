@@ -8,6 +8,7 @@ import { CoordinatorDashboard } from './pages/coordinator/CoordinatorDashboard'
 import { CoordinatorMonitoringPage } from './pages/coordinator/CoordinatorMonitoringPage'
 import { AccomplishmentsPage } from './pages/intern/AccomplishmentsPage'
 import { InternDashboard } from './pages/intern/InternDashboard'
+import { InternProfilePage } from './pages/intern/InternProfilePage'
 import { TasksPage } from './pages/intern/TasksPage'
 import { WeeklyAttendancePage } from './pages/intern/WeeklyAttendancePage'
 import { SupervisorDashboard } from './pages/supervisor/SupervisorDashboard'
@@ -36,6 +37,7 @@ export function App() {
                 element={<AccomplishmentsPage />}
               />
               <Route path="/intern/tasks" element={<TasksPage />} />
+              <Route path="/intern/profile" element={<InternProfilePage />} />
             </Route>
           </Route>
 
