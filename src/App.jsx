@@ -5,6 +5,7 @@ import { AuthLayout } from './layouts/AuthLayout'
 import { DashboardLayout } from './layouts/DashboardLayout'
 import { LoginPage } from './pages/auth/LoginPage'
 import { CoordinatorDashboard } from './pages/coordinator/CoordinatorDashboard'
+import { CoordinatorMonitoringPage } from './pages/coordinator/CoordinatorMonitoringPage'
 import { AccomplishmentsPage } from './pages/intern/AccomplishmentsPage'
 import { InternDashboard } from './pages/intern/InternDashboard'
 import { TasksPage } from './pages/intern/TasksPage'
@@ -59,6 +60,10 @@ export function App() {
           <Route element={<ProtectedRoute allowedRole="coordinator" />}>
             <Route element={<DashboardLayout />}>
               <Route path="/coordinator" element={<CoordinatorDashboard />} />
+              <Route
+                path="/coordinator/monitoring"
+                element={<CoordinatorMonitoringPage />}
+              />
             </Route>
           </Route>
 

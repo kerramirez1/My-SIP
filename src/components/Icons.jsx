@@ -84,6 +84,22 @@ export function NavIcon({ name, className = 'size-4 shrink-0' }) {
           <path d="M10.5 7v3.25l2.25 1.5" strokeLinecap="square" />
         </svg>
       )
+    case 'monitoring':
+      return (
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 20 20"
+          className={className}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.65"
+        >
+          <path
+            d="M3.5 16h13M5.75 16v-4.5M10 16V7.5M14.25 16V4.5"
+            strokeLinecap="square"
+          />
+        </svg>
+      )
     case 'dashboard':
     default:
       return (

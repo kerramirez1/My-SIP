@@ -48,6 +48,11 @@ export const ROLE_CONFIG = {
         icon: 'dashboard',
         end: true,
       },
+      {
+        to: '/coordinator/monitoring',
+        label: 'Monitoring',
+        icon: 'monitoring',
+      },
     ],
   },
 }
