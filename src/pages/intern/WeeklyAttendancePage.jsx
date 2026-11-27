@@ -197,7 +197,7 @@ export function WeeklyAttendancePage() {
         row.time_out,
         row.break_minutes ?? DEFAULT_BREAK_MINUTES,
       )
-      if (elapsed !== null && elapsed > 0) {
+      if (row.status === 'approved' && elapsed !== null && elapsed > 0) {
         acc.totalMinutes += elapsed
       }
       if (row.status === 'approved') acc.approved += 1
