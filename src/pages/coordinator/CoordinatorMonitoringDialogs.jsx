@@ -59,8 +59,18 @@ export function CoordinatorStatusPill({ statusKey, compact = false }) {
     DISPLAY_STATUS_META[statusKey] ?? DISPLAY_STATUS_META.pending
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-[5px] border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${meta.className}`}
+      className={`inline-flex items-center gap-1.5 border font-medium whitespace-nowrap ${
+        compact
+          ? 'rounded-full px-2.5 py-0.5 text-[11px]'
+          : 'rounded-[5px] px-2.5 py-0.5 text-xs'
+      } ${meta.className}`}
     >
+      {compact ? (
+        <span
+          aria-hidden="true"
+          className="size-1.5 shrink-0 rounded-full bg-current opacity-80"
+        />
+      ) : null}
       <span>{compact ? meta.shortLabel : meta.label}</span>
     </span>
   )

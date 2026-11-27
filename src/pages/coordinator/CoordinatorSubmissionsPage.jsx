@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { AlertMessage } from '../../components/AlertMessage'
-import { PaperclipIcon } from '../../components/Icons'
+import { CloseIcon, PaperclipIcon } from '../../components/Icons'
 import {
   formatDecimalHours,
   formatDurationMinutes,
@@ -20,7 +20,6 @@ import { formatCalendarDate, getTodayIsoDate } from '../../lib/weekUtils'
 import {
   CoordinatorStatusPill,
   DeleteRecordDialog,
-  PriorityBadge,
   SubmissionDetailDialog,
 } from './CoordinatorMonitoringDialogs'
 
@@ -41,6 +40,36 @@ const DEADLINE_TONE_CLASSES = {
   overdue: 'text-error font-medium',
   today: 'text-accent font-medium',
   upcoming: 'text-ink-muted',
+}
+
+const PRIORITY_TEXT_META = {
+  high: {
+    label: 'High priority',
+    dotClass: 'bg-error-border',
+    textClass: 'font-medium text-error',
+  },
+  medium: {
+    label: 'Medium priority',
+    dotClass: 'bg-accent-solid',
+    textClass: 'text-ink-muted',
+  },
+  low: {
+    label: 'Low priority',
+    dotClass: 'bg-input-border/70',
+    textClass: 'text-ink-muted',
+  },
+}
+
+function toNumericTime(value) {
+  if (!value) return -1
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : -1
+}
+
+function collapseOneLine(value) {
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function SortChevronIcon() {
@@ -150,6 +179,46 @@ function SortableHeader({
   )
 }
 
+function InternRowHeader({ item }) {
+  const subline = item.studentIdNo
+    ? `${item.studentIdNo} · ${item.supervisorName}`
+    : item.supervisorName
+
+  return (
+    <th scope="row">
+      <div className="min-w-0">
+        <p
+          title={item.internName}
+          className="truncate whitespace-nowrap text-[13px] font-medium text-ink"
+        >
+          {item.internName}
+        </p>
+        {subline ? (
+          <p
+            title={subline}
+            className="mt-0.5 truncate whitespace-nowrap text-[11px] font-normal tabular-nums text-ink-muted"
+          >
+            {subline}
+          </p>
+        ) : null}
+      </div>
+    </th>
+  )
+}
+
+function RowViewButton({ item, onSelect }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(item)}
+      className="inline-flex h-7.5 items-center justify-center whitespace-nowrap rounded-[5px] border border-rule bg-surface px-2.5 text-xs font-medium text-ink hover:border-accent/45 hover:bg-accent-tint/50 hover:text-accent"
+    >
+      <span>View</span>
+      <span className="visually-hidden"> details for {item.internName}</span>
+    </button>
+  )
+}
+
 export function CoordinatorSubmissionsPage() {
   useDocumentTitle('Submissions & Reviews')
 
@@ -190,6 +259,7 @@ export function CoordinatorSubmissionsPage() {
   const [deleteError, setDeleteError] = useState('')
   const [actionBanner, setActionBanner] = useState('')
 
+  const tablistRef = useRef(null)
   const tabRefs = useRef({})
 
   const {
@@ -292,19 +362,12 @@ export function CoordinatorSubmissionsPage() {
   }
 
   function toggleStatusQuickFilter(nextStatusKey) {
-    setStatusFilter((prev) => (prev === nextStatusKey ? 'all' : nextStatusKey))
+    if (nextStatusKey === 'all') {
+      setStatusFilter('all')
+    } else {
+      setStatusFilter((prev) => (prev === nextStatusKey ? 'all' : nextStatusKey))
+    }
     setPage(1)
-  }
-
-  function handleSort(nextKey, label) {
-    const nextDir =
-      sortKey === nextKey && sortDir === 'ascending'
-        ? 'descending'
-        : 'ascending'
-    setSortKey(nextKey)
-    setSortDir(nextDir)
-    setPage(1)
-    setSortAnnouncement(`Sorted by ${label}, ${nextDir}.`)
   }
 
   const tabSubmissions = useMemo(() => {
@@ -359,14 +422,14 @@ export function CoordinatorSubmissionsPage() {
         return COLLATOR.compare(a.shortTitle, b.shortTitle) * dir
       }
       if (sortKey === 'period') {
-        const aVal = a.row.week_of || a.row.attendance_date || ''
-        const bVal = b.row.week_of || b.row.attendance_date || ''
-        return String(aVal).localeCompare(String(bVal)) * dir
+        const aVal = toNumericTime(a.row.week_of || a.row.attendance_date)
+        const bVal = toNumericTime(b.row.week_of || b.row.attendance_date)
+        return (aVal - bVal) * dir
       }
       if (sortKey === 'deadline') {
-        const aVal = a.row.deadline || a.row.task_date || ''
-        const bVal = b.row.deadline || b.row.task_date || ''
-        return String(aVal).localeCompare(String(bVal)) * dir
+        const aVal = toNumericTime(a.row.deadline || a.row.task_date)
+        const bVal = toNumericTime(b.row.deadline || b.row.task_date)
+        return (aVal - bVal) * dir
       }
       if (sortKey === 'supervisor') {
         return COLLATOR.compare(a.supervisorName, b.supervisorName) * dir
@@ -377,7 +440,7 @@ export function CoordinatorSubmissionsPage() {
       if (sortKey === 'hours') {
         return ((a.renderedMinutes ?? -1) - (b.renderedMinutes ?? -1)) * dir
       }
-      return String(a.sortAt).localeCompare(String(b.sortAt)) * dir
+      return (toNumericTime(a.sortAt) - toNumericTime(b.sortAt)) * dir
     })
   }, [
     activeTab,
@@ -391,6 +454,48 @@ export function CoordinatorSubmissionsPage() {
     statusFilter,
     supervisorFilter,
   ])
+
+  function handleSort(nextKey, label) {
+    const nextDir =
+      sortKey === nextKey && sortDir === 'ascending'
+        ? 'descending'
+        : 'ascending'
+    setSortKey(nextKey)
+    setSortDir(nextDir)
+    setPage(1)
+    setSortAnnouncement(
+      `Sorted by ${label}, ${nextDir}, ${tabSubmissions.length} ${tabSubmissions.length === 1 ? 'row' : 'rows'}.`,
+    )
+  }
+
+  useEffect(() => {
+    if (
+      loading ||
+      typeof window === 'undefined' ||
+      window.CSS?.supports?.('animation-timeline', 'scroll()')
+    ) {
+      return undefined
+    }
+    const scroller = tablistRef.current
+    const first = scroller?.firstElementChild
+    const last = scroller?.lastElementChild
+    if (!scroller || !first || !last) return undefined
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const { target, intersectionRatio } of entries) {
+          scroller.classList.toggle(
+            target === first ? 'more-start' : 'more-end',
+            intersectionRatio < 1,
+          )
+        }
+      },
+      { root: scroller, threshold: 1, rootMargin: '1px' },
+    )
+    observer.observe(first)
+    observer.observe(last)
+    return () => observer.disconnect()
+  }, [loading])
 
   const tabStatusBreakdown = useMemo(() => {
     const items = allSubmissions.filter((item) => item.kind === activeTab)
@@ -462,8 +567,14 @@ export function CoordinatorSubmissionsPage() {
 
   const statusChips = [
     {
+      key: 'all',
+      label: 'All',
+      count: tabStatusBreakdown.total,
+      dotClass: null,
+    },
+    {
       key: 'pending',
-      label: 'Pending Supervisor Review',
+      label: 'Pending review',
       count: tabStatusBreakdown.pending,
       dotClass: 'bg-accent-solid',
     },
@@ -471,7 +582,7 @@ export function CoordinatorSubmissionsPage() {
       ? [
           {
             key: 'assigned_not_submitted',
-            label: 'Assigned – Not Submitted',
+            label: 'Not submitted',
             count: tabStatusBreakdown.notSubmitted,
             dotClass: 'bg-input-border',
           },
@@ -491,72 +602,46 @@ export function CoordinatorSubmissionsPage() {
     },
   ]
 
+  const rangeStart =
+    tabSubmissions.length === 0 ? 0 : (safePage - 1) * pageSize + 1
+  const rangeEnd = Math.min(safePage * pageSize, tabSubmissions.length)
+
   return (
     <div className="max-w-6xl space-y-5">
-      {/* 1. Compact, Aligned Page Header */}
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h1
-            id="main-content"
-            tabIndex={-1}
-            className="ledger-title text-[clamp(1.375rem,1.2rem+0.5vw,1.625rem)] font-semibold leading-[1.2] tracking-[-0.02em] text-ink outline-none"
-          >
-            Submissions &amp; Reviews
-          </h1>
-          <p className="mt-1 text-sm leading-[1.45] text-ink-muted">
-            Review attendance logs, weekly accomplishments, and task submissions
-            across all interns.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          disabled={loading || tabSubmissions.length === 0}
-          onClick={handleExportCsv}
-          className="inline-flex min-h-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-[5px] border border-rule bg-surface px-3.5 text-xs font-medium text-ink hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-55"
-        >
-          <ExportIcon className="size-3.5 text-ink-muted" />
-          <span className="whitespace-nowrap">Export CSV</span>
-        </button>
-      </header>
-
-      {actionBanner ? (
-        <AlertMessage message={actionBanner} variant="success" />
-      ) : null}
-
-      {loadError ? (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 flex-1">
-            <AlertMessage
-              message={`Could not load submission records: ${loadError}`}
-              variant="error"
-            />
+      {/* 1. Page Header + Baseline Category Navigation */}
+      <div className="space-y-4">
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h1
+              id="main-content"
+              tabIndex={-1}
+              className="ledger-title text-[clamp(1.375rem,1.2rem+0.5vw,1.625rem)] font-semibold leading-[1.2] tracking-[-0.02em] text-ink outline-none"
+            >
+              Submissions &amp; Reviews
+            </h1>
+            <p className="mt-1 text-sm leading-[1.45] text-ink-muted">
+              Review intern attendance logs, weekly accomplishments, and task
+              submissions.
+            </p>
           </div>
+
           <button
             type="button"
-            onClick={reload}
-            className="inline-flex h-9 shrink-0 items-center justify-center rounded-[5px] border border-rule bg-surface px-4 text-xs font-medium text-ink hover:bg-surface-subtle"
+            disabled={loading || tabSubmissions.length === 0}
+            onClick={handleExportCsv}
+            className="ledger-control inline-flex h-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap px-3.5 text-xs font-medium text-ink shadow-[0_1px_2px_rgb(20_23_29/0.04)] hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-55"
           >
-            Retry
+            <ExportIcon className="size-3.5 text-ink-muted" />
+            <span className="whitespace-nowrap">Export CSV</span>
           </button>
-        </div>
-      ) : null}
+        </header>
 
-      {loading ? (
-        <div className="flex items-center gap-3 rounded-[6px] border border-rule bg-surface px-5 py-14 text-sm text-ink-muted">
-          <progress
-            aria-label="Loading submissions"
-            className="loading-spinner"
-          />
-          <span>Loading submissions…</span>
-        </div>
-      ) : (
-        <section className="overflow-hidden rounded-[6px] border border-rule bg-surface">
-          {/* 2. Accessible Tab Bar with Anchor-Positioned Active Underline */}
+        {!loading ? (
           <div
+            ref={tablistRef}
             role="tablist"
             aria-label="Submission categories"
-            className="sip-tablist bg-surface-subtle"
+            className="sip-tablist is-page-tabs"
           >
             {TABS.map((tab, index) => {
               const selected = activeTab === tab.id
@@ -576,10 +661,10 @@ export function CoordinatorSubmissionsPage() {
                 >
                   <span className="whitespace-nowrap">{tab.label}</span>
                   <span
-                    className={`inline-flex min-w-5 items-center justify-center whitespace-nowrap rounded-[4px] border px-1.5 py-0.5 text-[11px] font-medium tabular-nums leading-none ${
+                    className={`inline-flex min-w-5 items-center justify-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums leading-none ${
                       selected
-                        ? 'border-accent/35 bg-accent-tint text-accent'
-                        : 'border-rule bg-surface text-ink-muted'
+                        ? 'bg-accent-tint text-accent'
+                        : 'bg-surface-subtle text-ink-muted'
                     }`}
                   >
                     {tabCounts[tab.id] ?? 0}
@@ -588,237 +673,297 @@ export function CoordinatorSubmissionsPage() {
               )
             })}
           </div>
+        ) : null}
+      </div>
 
-          {/* Active Tab Panel */}
-          <div
-            role="tabpanel"
-            aria-labelledby={`tab-${activeTab}`}
-            tabIndex={0}
-            className="outline-none"
+      {actionBanner ? (
+        <AlertMessage message={actionBanner} variant="success" />
+      ) : null}
+
+      {loadError ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <AlertMessage
+              message={`Could not load submission records: ${loadError}`}
+              variant="error"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={reload}
+            className="ledger-control inline-flex h-9 shrink-0 items-center justify-center px-4 text-xs font-medium text-ink hover:bg-surface-subtle"
           >
-            {/* 3. Compact Scannable Status Summary Strip */}
-            <div className="flex flex-wrap items-center justify-between gap-2.5 bg-surface px-5 pt-3.5 pb-2.5">
-              <div
-                role="group"
-                aria-label="Filter by submission status"
-                className="flex flex-wrap items-center gap-1.5"
-              >
-                {statusChips.map((chip) => {
-                  const pressed = statusFilter === chip.key
-                  return (
-                    <button
-                      key={chip.key}
-                      type="button"
-                      aria-pressed={pressed}
-                      onClick={() => toggleStatusQuickFilter(chip.key)}
-                      className={`inline-flex min-h-7 items-center gap-1.5 whitespace-nowrap rounded-[4px] border px-2.5 text-xs transition-colors ${
-                        pressed
-                          ? 'border-accent bg-accent-tint font-medium text-accent'
-                          : 'border-rule bg-surface-subtle/70 text-ink-muted hover:border-input-border hover:text-ink'
-                      }`}
-                    >
+            Retry
+          </button>
+        </div>
+      ) : null}
+
+      {loading ? (
+        <div className="flex items-center gap-3 rounded-[8px] border border-rule bg-surface px-5 py-14 text-sm text-ink-muted">
+          <progress
+            aria-label="Loading submissions"
+            className="loading-spinner"
+          />
+          <span>Loading submissions…</span>
+        </div>
+      ) : (
+        <div
+          role="tabpanel"
+          aria-labelledby={`tab-${activeTab}`}
+          className="overflow-hidden rounded-[8px] border border-rule bg-surface shadow-[0_1px_2px_rgb(20_23_29/0.03)]"
+        >
+          {/* 2. Quiet Inline Status Summary & Record Count */}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rule/80 bg-surface-subtle/45 px-5 py-2">
+            <div
+              role="group"
+              aria-label="Quick filter by submission status"
+              className="flex flex-wrap items-center gap-1"
+            >
+              {statusChips.map((chip) => {
+                const pressed = statusFilter === chip.key
+                return (
+                  <button
+                    key={chip.key}
+                    type="button"
+                    aria-pressed={pressed}
+                    onClick={() => toggleStatusQuickFilter(chip.key)}
+                    className={`inline-flex min-h-7 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 text-xs transition-colors ${
+                      pressed
+                        ? 'border-accent/35 bg-accent-tint font-medium text-accent'
+                        : 'border-transparent bg-transparent text-ink-muted hover:bg-surface hover:text-ink'
+                    }`}
+                  >
+                    {chip.dotClass ? (
                       <span
                         aria-hidden="true"
                         className={`size-1.5 shrink-0 rounded-full ${chip.dotClass}`}
                       />
-                      <span className="whitespace-nowrap">{chip.label}</span>
-                      <span className="font-semibold tabular-nums text-ink">
-                        {chip.count}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-
-              <span className="whitespace-nowrap text-xs tabular-nums text-ink-muted">
-                Showing{' '}
-                <strong className="font-semibold text-ink">
-                  {tabSubmissions.length}
-                </strong>{' '}
-                of {tabStatusBreakdown.total}
-              </span>
+                    ) : null}
+                    <span className="whitespace-nowrap">{chip.label}</span>
+                    <span
+                      className={`tabular-nums ${
+                        pressed ? 'font-semibold text-accent' : 'font-medium text-ink'
+                      }`}
+                    >
+                      {chip.count}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
 
-            {/* 4. Single-Row Primary Filter Toolbar + Collapsible More Filters */}
-            <search
-              aria-label={`Filter ${activeTabLabel}`}
-              className="border-b border-rule bg-surface px-5 pt-1 pb-3.5"
-            >
-              {/* Primary Horizontal Toolbar Row (1 row on desktop, responsive grid on tablet/mobile) */}
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:flex lg:flex-row lg:flex-nowrap lg:items-center">
-                {/* 1. Search submissions (widest element) */}
-                <div className="relative min-w-0 sm:col-span-2 lg:flex-1">
-                  <label htmlFor="sub-search" className="visually-hidden">
-                    Search submissions
-                  </label>
-                  <SearchIcon className="pointer-events-none absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-ink-muted" />
-                  <input
-                    id="sub-search"
-                    type="search"
-                    value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value)
-                      setPage(1)
-                    }}
-                    placeholder="Search submissions (intern, student ID, title, remarks)…"
-                    className="min-h-9 w-full rounded-[5px] border border-input-border bg-surface ps-9 pe-3 text-xs text-ink placeholder:text-ink-muted/75 hover:border-ink"
-                  />
-                </div>
+            <span className="whitespace-nowrap text-xs tabular-nums text-ink-muted">
+              {tabSubmissions.length === 0 ? (
+                '0 matching'
+              ) : tabSubmissions.length === 1 && tabStatusBreakdown.total === 1 ? (
+                '1 record'
+              ) : (
+                <>
+                  Showing{' '}
+                  <strong className="font-medium text-ink">
+                    {rangeStart}–{rangeEnd}
+                  </strong>{' '}
+                  of {tabSubmissions.length}
+                </>
+              )}
+            </span>
+          </div>
 
-                {/* 2. Status dropdown */}
-                <div className="min-w-0 lg:w-36 lg:shrink-0 xl:w-48">
-                  <label htmlFor="sub-status" className="visually-hidden">
-                    Status
-                  </label>
-                  <select
-                    id="sub-status"
-                    value={statusFilter}
-                    onChange={(e) => {
-                      setStatusFilter(e.target.value)
-                      setPage(1)
-                    }}
-                    className="min-h-9 w-full rounded-[5px] border border-input-border bg-surface px-2.5 text-xs text-ink hover:border-ink"
-                  >
-                    <option value="all">All statuses</option>
-                    <option value="pending">Pending Supervisor Review</option>
-                    {activeTab === 'tasks' ? (
-                      <option value="assigned_not_submitted">
-                        Assigned – Not Submitted
-                      </option>
-                    ) : null}
-                    <option value="approved">Approved by Supervisor</option>
-                    <option value="returned">Returned for Revision</option>
-                    <option value="rejected">Rejected</option>
-                  </select>
-                </div>
-
-                {/* 3. Intern dropdown */}
-                <div className="min-w-0 lg:w-36 lg:shrink-0 xl:w-44">
-                  <label htmlFor="sub-intern" className="visually-hidden">
-                    Intern
-                  </label>
-                  <select
-                    id="sub-intern"
-                    value={internFilter}
-                    onChange={(e) => {
-                      setInternFilter(e.target.value)
-                      setPage(1)
-                    }}
-                    className="min-h-9 w-full rounded-[5px] border border-input-border bg-surface px-2.5 text-xs text-ink hover:border-ink"
-                  >
-                    <option value="all">All interns</option>
-                    {internProgressRows.map((i) => (
-                      <option key={i.id} value={i.id}>
-                        {i.full_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* 4. More Filters button + conditional Clear Filters */}
-                <div className="flex flex-wrap items-center gap-2 sm:col-span-2 sm:justify-between lg:shrink-0 lg:flex-nowrap lg:justify-end">
+          {/* 3. Unified Single-Row Filter Toolbar + Collapsible More Filters */}
+          <search
+            aria-label={`Filter ${activeTabLabel}`}
+            className="border-b border-rule bg-surface px-5 py-3"
+          >
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:flex-row lg:flex-nowrap lg:items-center">
+              {/* Search submissions (widest element) */}
+              <div className="relative min-w-0 sm:col-span-2 lg:flex-1">
+                <label htmlFor="sub-search" className="visually-hidden">
+                  Search submissions
+                </label>
+                <SearchIcon className="pointer-events-none absolute start-3 top-1/2 size-3.5 -translate-y-1/2 text-ink-muted" />
+                <input
+                  id="sub-search"
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value)
+                    setPage(1)
+                  }}
+                  placeholder="Search intern, student ID, title, or remarks…"
+                  className="ledger-control h-9 w-full ps-8.5 pe-8 text-xs text-ink placeholder:text-ink-muted/75"
+                />
+                {searchQuery ? (
                   <button
                     type="button"
-                    aria-expanded={moreFiltersOpen}
-                    aria-controls="sub-more-filters"
-                    onClick={() => setMoreFiltersOpen((open) => !open)}
-                    className={`inline-flex min-h-9 items-center justify-center gap-1.5 rounded-[5px] border px-3 text-xs font-medium whitespace-nowrap transition-colors ${
-                      moreFiltersOpen || secondaryFilterCount > 0
-                        ? 'border-accent bg-accent-tint text-accent'
-                        : 'border-rule bg-surface text-ink hover:bg-surface-subtle'
-                    }`}
+                    onClick={() => {
+                      setSearchQuery('')
+                      setPage(1)
+                    }}
+                    aria-label="Clear search query"
+                    className="absolute end-1.5 top-1/2 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-[4px] text-ink-muted hover:bg-surface-subtle hover:text-ink"
                   >
-                    <FilterSlidersIcon />
-                    <span className="whitespace-nowrap">More Filters</span>
-                    {secondaryFilterCount > 0 ? (
-                      <span
-                        aria-label={`${secondaryFilterCount} active secondary ${
-                          secondaryFilterCount === 1 ? 'filter' : 'filters'
-                        }`}
-                        className="inline-flex min-w-4.5 items-center justify-center rounded-full bg-accent-solid px-1.5 py-0.5 text-[11px] font-semibold leading-none tabular-nums text-on-accent"
-                      >
-                        {secondaryFilterCount}
-                      </span>
-                    ) : null}
-                    <ChevronDownIcon
-                      className={`size-3.5 shrink-0 transition-transform ${
-                        moreFiltersOpen ? 'rotate-180' : ''
-                      }`}
-                    />
+                    <CloseIcon className="size-3" />
                   </button>
-
-                  {activeFilterCount > 0 ? (
-                    <button
-                      type="button"
-                      onClick={resetFilters}
-                      className="inline-flex min-h-9 shrink-0 items-center justify-center whitespace-nowrap rounded-[5px] border border-rule bg-surface px-2.5 text-xs font-medium text-ink hover:bg-surface-subtle"
-                    >
-                      <span className="whitespace-nowrap">Clear Filters</span>
-                    </button>
-                  ) : null}
-                </div>
+                ) : null}
               </div>
 
-              {/* Active secondary filter indicators when More Filters is collapsed */}
-              {!moreFiltersOpen && secondaryFilterCount > 0 ? (
-                <div
-                  aria-label="Active secondary filters"
-                  className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px]"
+              {/* Status dropdown */}
+              <div className="relative min-w-0 lg:w-40 lg:shrink-0 xl:w-44">
+                <label htmlFor="sub-status" className="visually-hidden">
+                  Status
+                </label>
+                <select
+                  id="sub-status"
+                  value={statusFilter}
+                  onChange={(e) => {
+                    setStatusFilter(e.target.value)
+                    setPage(1)
+                  }}
+                  className="ledger-control ledger-select h-9 w-full ps-3 text-xs text-ink"
                 >
-                  <span className="whitespace-nowrap font-medium text-ink-muted">
-                    Secondary filters:
-                  </span>
-                  {supervisorFilter !== 'all' ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSupervisorFilter('all')
-                        setPage(1)
-                      }}
-                      className="inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-[4px] border border-accent/35 bg-accent-tint px-2 font-medium text-accent hover:opacity-85"
-                    >
-                      <span>Supervisor: {activeSupervisorLabel}</span>
-                      <span aria-hidden="true">×</span>
-                      <span className="visually-hidden">
-                        Remove supervisor filter
-                      </span>
-                    </button>
+                  <option value="all">All statuses</option>
+                  <option value="pending">Pending review</option>
+                  {activeTab === 'tasks' ? (
+                    <option value="assigned_not_submitted">
+                      Not submitted
+                    </option>
                   ) : null}
-                  {dateFrom || dateTo ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDateFrom('')
-                        setDateTo('')
-                        setPage(1)
-                      }}
-                      className="inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-[4px] border border-accent/35 bg-accent-tint px-2 font-medium tabular-nums text-accent hover:opacity-85"
-                    >
-                      <span>
-                        Date: {dateFrom || 'Start'} to {dateTo || 'Present'}
-                      </span>
-                      <span aria-hidden="true">×</span>
-                      <span className="visually-hidden">
-                        Remove date range filter
-                      </span>
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
+                  <option value="approved">Approved</option>
+                  <option value="returned">Returned</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+                <ChevronDownIcon className="ledger-select-chevron absolute end-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-muted" />
+              </div>
 
-              {/* Expandable More Filters Panel (Supervisor + Date Range From/To) */}
-              {moreFiltersOpen ? (
-                <div
-                  id="sub-more-filters"
-                  className="mt-3 grid grid-cols-1 gap-3 border-t border-rule pt-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,16rem)_minmax(0,22rem)_1fr] lg:items-end"
+              {/* Intern dropdown */}
+              <div className="relative min-w-0 lg:w-40 lg:shrink-0 xl:w-44">
+                <label htmlFor="sub-intern" className="visually-hidden">
+                  Intern
+                </label>
+                <select
+                  id="sub-intern"
+                  value={internFilter}
+                  onChange={(e) => {
+                    setInternFilter(e.target.value)
+                    setPage(1)
+                  }}
+                  className="ledger-control ledger-select h-9 w-full ps-3 text-xs text-ink"
                 >
-                  <div className="flex flex-col gap-1">
-                    <label
-                      htmlFor="sub-supervisor"
-                      className="whitespace-nowrap text-xs font-medium text-ink-muted"
+                  <option value="all">All interns</option>
+                  {internProgressRows.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.full_name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDownIcon className="ledger-select-chevron absolute end-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-muted" />
+              </div>
+
+              {/* More Filters + conditional Clear */}
+              <div className="flex flex-wrap items-center gap-2 sm:col-span-2 sm:justify-between lg:shrink-0 lg:flex-nowrap lg:justify-end">
+                <button
+                  type="button"
+                  aria-expanded={moreFiltersOpen}
+                  aria-controls="sub-more-filters"
+                  onClick={() => setMoreFiltersOpen((open) => !open)}
+                  className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-[6px] border px-3 text-xs font-medium whitespace-nowrap transition-colors ${
+                    moreFiltersOpen || secondaryFilterCount > 0
+                      ? 'border-accent/45 bg-accent-tint text-accent'
+                      : 'border-rule bg-surface text-ink hover:border-input-border hover:bg-surface-subtle'
+                  }`}
+                >
+                  <FilterSlidersIcon />
+                  <span className="whitespace-nowrap">More Filters</span>
+                  {secondaryFilterCount > 0 ? (
+                    <span
+                      aria-label={`${secondaryFilterCount} active secondary ${
+                        secondaryFilterCount === 1 ? 'filter' : 'filters'
+                      }`}
+                      className="inline-flex min-w-4.5 items-center justify-center rounded-full bg-accent-solid px-1.5 py-0.5 text-[11px] font-semibold leading-none tabular-nums text-on-accent"
                     >
-                      Supervisor
-                    </label>
+                      {secondaryFilterCount}
+                    </span>
+                  ) : null}
+                  <ChevronDownIcon
+                    className={`size-3.5 shrink-0 text-ink-muted transition-transform ${
+                      moreFiltersOpen ? 'rotate-180 text-accent' : ''
+                    }`}
+                  />
+                </button>
+
+                {activeFilterCount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={resetFilters}
+                    className="inline-flex h-9 shrink-0 items-center justify-center whitespace-nowrap rounded-[6px] px-2.5 text-xs font-medium text-ink-muted hover:bg-surface-subtle hover:text-ink"
+                  >
+                    <span className="whitespace-nowrap">Clear</span>
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            {/* Active secondary filter pills when More Filters is collapsed */}
+            {!moreFiltersOpen && secondaryFilterCount > 0 ? (
+              <div
+                aria-label="Active secondary filters"
+                className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px]"
+              >
+                <span className="whitespace-nowrap text-ink-muted">
+                  Filtered by:
+                </span>
+                {supervisorFilter !== 'all' ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSupervisorFilter('all')
+                      setPage(1)
+                    }}
+                    className="inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-full border border-accent/30 bg-accent-tint px-2.5 font-medium text-accent hover:opacity-85"
+                  >
+                    <span>Supervisor: {activeSupervisorLabel}</span>
+                    <span aria-hidden="true">×</span>
+                    <span className="visually-hidden">
+                      Remove supervisor filter
+                    </span>
+                  </button>
+                ) : null}
+                {dateFrom || dateTo ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDateFrom('')
+                      setDateTo('')
+                      setPage(1)
+                    }}
+                    className="inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-full border border-accent/30 bg-accent-tint px-2.5 font-medium tabular-nums text-accent hover:opacity-85"
+                  >
+                    <span>
+                      {dateFrom || 'Start'} – {dateTo || 'Present'}
+                    </span>
+                    <span aria-hidden="true">×</span>
+                    <span className="visually-hidden">
+                      Remove date range filter
+                    </span>
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* Expandable More Filters Panel */}
+            {moreFiltersOpen ? (
+              <div
+                id="sub-more-filters"
+                className="-mx-5 mt-3 -mb-3 grid grid-cols-1 gap-3 border-t border-rule bg-surface-subtle/60 px-5 py-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,16rem)_minmax(0,22rem)_1fr] lg:items-end"
+              >
+                <div className="flex flex-col gap-1">
+                  <label
+                    htmlFor="sub-supervisor"
+                    className="whitespace-nowrap text-xs font-medium text-ink-muted"
+                  >
+                    Supervisor
+                  </label>
+                  <div className="relative">
                     <select
                       id="sub-supervisor"
                       value={supervisorFilter}
@@ -826,7 +971,7 @@ export function CoordinatorSubmissionsPage() {
                         setSupervisorFilter(e.target.value)
                         setPage(1)
                       }}
-                      className="min-h-9 w-full rounded-[5px] border border-input-border bg-surface px-2.5 text-xs text-ink hover:border-ink"
+                      className="ledger-control ledger-select h-9 w-full ps-3 text-xs text-ink"
                     >
                       <option value="all">All supervisors</option>
                       {filterOptions.supervisors.map((sup) => (
@@ -838,301 +983,303 @@ export function CoordinatorSubmissionsPage() {
                         <option value="unassigned">Unassigned interns</option>
                       ) : null}
                     </select>
-                  </div>
-
-                  <fieldset className="m-0 min-w-0 border-0 p-0">
-                    <legend className="mb-1 whitespace-nowrap text-xs font-medium text-ink-muted">
-                      Date range (From – To)
-                    </legend>
-                    <div className="date-range-group">
-                      <label htmlFor="sub-date-from" className="visually-hidden">
-                        Date from
-                      </label>
-                      <input
-                        id="sub-date-from"
-                        type="date"
-                        aria-label="Date from"
-                        value={dateFrom}
-                        onChange={(e) => {
-                          setDateFrom(e.target.value)
-                          setPage(1)
-                        }}
-                      />
-                      <span
-                        aria-hidden="true"
-                        className="select-none px-1.5 text-xs text-ink-muted"
-                      >
-                        to
-                      </span>
-                      <label htmlFor="sub-date-to" className="visually-hidden">
-                        Date to
-                      </label>
-                      <input
-                        id="sub-date-to"
-                        type="date"
-                        aria-label="Date to"
-                        value={dateTo}
-                        onChange={(e) => {
-                          setDateTo(e.target.value)
-                          setPage(1)
-                        }}
-                      />
-                    </div>
-                  </fieldset>
-
-                  <div className="flex items-center justify-between gap-2 sm:col-span-2 lg:col-span-1 lg:justify-end">
-                    <span className="whitespace-nowrap text-xs text-ink-muted">
-                      Filters persist while switching tabs.
-                    </span>
-                    {secondaryFilterCount > 0 ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSupervisorFilter('all')
-                          setDateFrom('')
-                          setDateTo('')
-                          setPage(1)
-                        }}
-                        className="whitespace-nowrap text-xs font-medium text-accent underline-offset-4 hover:underline"
-                      >
-                        Reset secondary
-                      </button>
-                    ) : null}
+                    <ChevronDownIcon className="ledger-select-chevron absolute end-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-muted" />
                   </div>
                 </div>
-              ) : null}
-            </search>
 
-            <span role="status" className="visually-hidden">
-              {sortAnnouncement}
-            </span>
+                <fieldset className="m-0 min-w-0 border-0 p-0">
+                  <legend className="mb-1 whitespace-nowrap text-xs font-medium text-ink-muted">
+                    Date range
+                  </legend>
+                  <div className="date-range-group is-subtle">
+                    <label htmlFor="sub-date-from" className="visually-hidden">
+                      Date from
+                    </label>
+                    <input
+                      id="sub-date-from"
+                      type="date"
+                      aria-label="Date from"
+                      value={dateFrom}
+                      onChange={(e) => {
+                        setDateFrom(e.target.value)
+                        setPage(1)
+                      }}
+                    />
+                    <span
+                      aria-hidden="true"
+                      className="select-none px-1.5 text-xs text-ink-muted"
+                    >
+                      –
+                    </span>
+                    <label htmlFor="sub-date-to" className="visually-hidden">
+                      Date to
+                    </label>
+                    <input
+                      id="sub-date-to"
+                      type="date"
+                      aria-label="Date to"
+                      value={dateTo}
+                      onChange={(e) => {
+                        setDateTo(e.target.value)
+                        setPage(1)
+                      }}
+                    />
+                  </div>
+                </fieldset>
 
-            {/* 5. Tab-Specific Data Table */}
-            {paginatedRows.length === 0 ? (
-              <div className="px-5 py-12 text-sm text-ink-muted">
-                {tabStatusBreakdown.total === 0
-                  ? `No ${activeTabLabel.toLowerCase()} records have been logged yet.`
-                  : 'No records match the current filters.'}
+                <div className="flex items-center justify-between gap-2 sm:col-span-2 lg:col-span-1 lg:justify-end">
+                  {secondaryFilterCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSupervisorFilter('all')
+                        setDateFrom('')
+                        setDateTo('')
+                        setPage(1)
+                      }}
+                      className="whitespace-nowrap text-xs font-medium text-accent underline-offset-4 hover:underline"
+                    >
+                      Reset secondary filters
+                    </button>
+                  ) : (
+                    <span className="whitespace-nowrap text-xs text-ink-muted">
+                      Filters stay active across tabs.
+                    </span>
+                  )}
+                </div>
               </div>
-            ) : (
-              <div
-                tabIndex={0}
-                role="region"
-                aria-labelledby={`submissions-caption-${activeTab}`}
-                className="table-wrapper"
-              >
-                <table
-                  className={`submission-table is-compact submissions-scroll-table${
-                    activeTab === 'accomplishments'
-                      ? ' is-accomplishments'
-                      : activeTab === 'tasks'
-                        ? ' is-tasks'
-                        : ''
-                  }`}
-                >
-                  <caption
-                    id={`submissions-caption-${activeTab}`}
-                    className="visually-hidden"
-                  >
-                    {activeTabLabel} records across all interns
-                  </caption>
+            ) : null}
+          </search>
 
-                  {activeTab === 'attendance' ? (
-                    <>
-                      <colgroup>
-                        <col />
-                        <col className="w-36" />
-                        <col className="w-40" />
-                        <col className="w-30" />
-                        <col className="w-30" />
-                        <col className="w-24" />
-                      </colgroup>
-                      <thead>
-                        <tr>
-                          <SortableHeader
-                            columnKey="intern"
-                            label="Intern"
-                            sortKey={sortKey}
-                            sortDir={sortDir}
-                            onSort={handleSort}
-                          />
-                          <SortableHeader
-                            columnKey="date"
-                            label="Attendance Date"
-                            sortKey={sortKey}
-                            sortDir={sortDir}
-                            onSort={handleSort}
-                          />
-                          <th scope="col" className="whitespace-nowrap">
-                            Time In – Out
-                          </th>
-                          <SortableHeader
-                            columnKey="hours"
-                            label="Hours"
-                            sortKey={sortKey}
-                            sortDir={sortDir}
-                            onSort={handleSort}
-                          />
-                          <SortableHeader
-                            columnKey="status"
-                            label="Status"
-                            sortKey={sortKey}
-                            sortDir={sortDir}
-                            onSort={handleSort}
-                          />
-                          <th scope="col" className="col-action whitespace-nowrap">
-                            Action
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paginatedRows.map((item) => (
-                          <tr key={item.key}>
-                            <th scope="row">
-                              <div className="min-w-0">
-                                <p
-                                  title={item.internName}
-                                  className="truncate whitespace-nowrap text-xs font-semibold text-ink"
-                                >
-                                  {item.internName}
-                                </p>
-                                <p className="mt-0.5 truncate whitespace-nowrap text-[11px] font-normal tabular-nums text-ink-muted">
-                                  {item.studentIdNo || 'No student ID'}
-                                </p>
-                              </div>
-                            </th>
-                            <td
-                              data-label="Attendance Date"
-                              className="whitespace-nowrap text-xs font-medium tabular-nums text-ink"
-                              title={`Reporting period: ${item.reportingPeriod}`}
-                            >
-                              {formatCalendarDate(item.row.attendance_date)}
-                            </td>
-                            <td
-                              data-label="Time In – Out"
-                              className="whitespace-nowrap text-xs tabular-nums text-ink-muted"
-                            >
-                              {formatWallClockTime(item.row.time_in)} –{' '}
-                              {formatWallClockTime(item.row.time_out)}
-                            </td>
-                            <td
-                              data-label="Hours"
-                              className="whitespace-nowrap text-xs tabular-nums text-ink"
-                            >
-                              {item.renderedMinutes !== null ? (
-                                <span
-                                  className="font-semibold"
-                                  title={formatDurationMinutes(item.renderedMinutes)}
-                                >
-                                  {formatDecimalHours(item.renderedMinutes)}
-                                </span>
-                              ) : (
-                                <span className="whitespace-nowrap font-medium text-error">
-                                  Incomplete
-                                </span>
-                              )}
-                            </td>
-                            <td data-label="Status">
-                              <CoordinatorStatusPill
-                                statusKey={item.displayStatusKey}
-                                compact
-                              />
-                            </td>
-                            <td data-label="Action" className="col-action">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedSubmission(item)}
-                                className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
+          <span role="status" className="visually-hidden">
+            {sortAnnouncement}
+          </span>
+
+          {/* 4. Tab-Specific Data Table */}
+          {paginatedRows.length === 0 ? (
+            <div className="flex flex-col items-start justify-between gap-3 px-5 py-10 sm:flex-row sm:items-center">
+              <div>
+                <p className="text-sm font-medium text-ink">
+                  {tabStatusBreakdown.total === 0
+                    ? `No ${activeTabLabel.toLowerCase()} logged yet`
+                    : 'No submissions match your filters'}
+                </p>
+                <p className="mt-0.5 text-xs text-ink-muted">
+                  {tabStatusBreakdown.total === 0
+                    ? 'New intern submissions will appear here automatically.'
+                    : 'Adjust your search query or clear the active filters to see all records.'}
+                </p>
+              </div>
+              {activeFilterCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="ledger-control inline-flex h-8 shrink-0 items-center justify-center px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
+                >
+                  Clear filters
+                </button>
+              ) : null}
+            </div>
+          ) : (
+            <div
+              tabIndex={0}
+              role="region"
+              aria-labelledby={`submissions-caption-${activeTab}`}
+              className="table-wrapper"
+            >
+              <table
+                className={`submission-table is-compact submissions-scroll-table${
+                  activeTab === 'accomplishments'
+                    ? ' is-accomplishments'
+                    : activeTab === 'tasks'
+                      ? ' is-tasks'
+                      : ''
+                }`}
+              >
+                <caption
+                  id={`submissions-caption-${activeTab}`}
+                  className="visually-hidden"
+                >
+                  {activeTabLabel} records across all interns
+                </caption>
+
+                {activeTab === 'attendance' ? (
+                  <>
+                    <colgroup>
+                      <col className="w-44" />
+                      <col className="w-34" />
+                      <col />
+                      <col className="w-28" />
+                      <col className="w-30" />
+                      <col className="w-22" />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <SortableHeader
+                          columnKey="intern"
+                          label="Intern"
+                          sortKey={sortKey}
+                          sortDir={sortDir}
+                          onSort={handleSort}
+                        />
+                        <SortableHeader
+                          columnKey="date"
+                          label="Date"
+                          sortKey={sortKey}
+                          sortDir={sortDir}
+                          onSort={handleSort}
+                        />
+                        <th scope="col" className="whitespace-nowrap">
+                          Time In – Out
+                        </th>
+                        <SortableHeader
+                          columnKey="hours"
+                          label="Rendered"
+                          sortKey={sortKey}
+                          sortDir={sortDir}
+                          onSort={handleSort}
+                        />
+                        <SortableHeader
+                          columnKey="status"
+                          label="Status"
+                          sortKey={sortKey}
+                          sortDir={sortDir}
+                          onSort={handleSort}
+                        />
+                        <th scope="col" className="col-action whitespace-nowrap">
+                          Action
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedRows.map((item) => (
+                        <tr key={item.key}>
+                          <InternRowHeader item={item} />
+                          <td
+                            data-label="Date"
+                            className="whitespace-nowrap text-xs font-medium tabular-nums text-ink"
+                            title={`Reporting period: ${item.reportingPeriod}`}
+                          >
+                            {formatCalendarDate(item.row.attendance_date)}
+                          </td>
+                          <td
+                            data-label="Time In – Out"
+                            className="whitespace-nowrap text-xs tabular-nums text-ink-muted"
+                          >
+                            {formatWallClockTime(item.row.time_in)} –{' '}
+                            {formatWallClockTime(item.row.time_out)}
+                          </td>
+                          <td
+                            data-label="Rendered"
+                            className="whitespace-nowrap text-xs tabular-nums text-ink"
+                          >
+                            {item.renderedMinutes !== null ? (
+                              <span
+                                className="font-medium"
+                                title={formatDurationMinutes(item.renderedMinutes)}
                               >
-                                View                                <span className="visually-hidden"> details for {item.internName}</span>
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </>
-                  ) : activeTab === 'accomplishments' ? (
-                    <>
-                      <colgroup>
-                        <col className="w-40" />
-                        <col />
-                        <col className="w-44" />
-                        <col className="w-30" />
-                        <col className="w-30" />
-                        <col className="w-24" />
-                      </colgroup>
-                      <thead>
-                        <tr>
-                          <SortableHeader
-                            columnKey="intern"
-                            label="Intern"
-                            sortKey={sortKey}
-                            sortDir={sortDir}
-                            onSort={handleSort}
-                          />
-                          <SortableHeader
-                            columnKey="title"
-                            label="Accomplishment"
-                            sortKey={sortKey}
-                            sortDir={sortDir}
-                            onSort={handleSort}
-                          />
-                          <SortableHeader
-                            columnKey="period"
-                            label="Reporting Period"
-                            sortKey={sortKey}
-                            sortDir={sortDir}
-                            onSort={handleSort}
-                          />
-                          <SortableHeader
-                            columnKey="date"
-                            label="Submitted"
-                            sortKey={sortKey}
-                            sortDir={sortDir}
-                            onSort={handleSort}
-                          />
-                          <SortableHeader
-                            columnKey="status"
-                            label="Status"
-                            sortKey={sortKey}
-                            sortDir={sortDir}
-                            onSort={handleSort}
-                          />
-                          <th scope="col" className="col-action whitespace-nowrap">
-                            Action
-                          </th>
+                                {formatDecimalHours(item.renderedMinutes)}
+                              </span>
+                            ) : (
+                              <span className="whitespace-nowrap font-medium text-error">
+                                Incomplete
+                              </span>
+                            )}
+                          </td>
+                          <td data-label="Status">
+                            <CoordinatorStatusPill
+                              statusKey={item.displayStatusKey}
+                              compact
+                            />
+                          </td>
+                          <td data-label="Action" className="col-action">
+                            <RowViewButton
+                              item={item}
+                              onSelect={setSelectedSubmission}
+                            />
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {paginatedRows.map((item) => (
+                      ))}
+                    </tbody>
+                  </>
+                ) : activeTab === 'accomplishments' ? (
+                  <>
+                    <colgroup>
+                      <col className="w-44" />
+                      <col />
+                      <col className="w-42" />
+                      <col className="w-30" />
+                      <col className="w-30" />
+                      <col className="w-22" />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <SortableHeader
+                          columnKey="intern"
+                          label="Intern"
+                          sortKey={sortKey}
+                          sortDir={sortDir}
+                          onSort={handleSort}
+                        />
+                        <SortableHeader
+                          columnKey="title"
+                          label="Accomplishment"
+                          sortKey={sortKey}
+                          sortDir={sortDir}
+                          onSort={handleSort}
+                        />
+                        <SortableHeader
+                          columnKey="period"
+                          label="Reporting Period"
+                          sortKey={sortKey}
+                          sortDir={sortDir}
+                          onSort={handleSort}
+                        />
+                        <SortableHeader
+                          columnKey="date"
+                          label="Submitted"
+                          sortKey={sortKey}
+                          sortDir={sortDir}
+                          onSort={handleSort}
+                        />
+                        <SortableHeader
+                          columnKey="status"
+                          label="Status"
+                          sortKey={sortKey}
+                          sortDir={sortDir}
+                          onSort={handleSort}
+                        />
+                        <th scope="col" className="col-action whitespace-nowrap">
+                          Action
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedRows.map((item) => {
+                        const excerpt = collapseOneLine(item.row.description)
+                        return (
                           <tr key={item.key}>
-                            <th scope="row">
-                              <div className="min-w-0">
-                                <p
-                                  title={item.internName}
-                                  className="truncate whitespace-nowrap text-xs font-semibold text-ink"
-                                >
-                                  {item.internName}
-                                </p>
-                                <p className="mt-0.5 truncate whitespace-nowrap text-[11px] font-normal tabular-nums text-ink-muted">
-                                  {item.studentIdNo || 'No student ID'}
-                                </p>
-                              </div>
-                            </th>
+                            <InternRowHeader item={item} />
                             <td data-label="Accomplishment">
-                              <div className="flex min-w-0 items-center gap-1.5">
-                                <p
-                                  title={
-                                    item.row.description
-                                      ? `${item.row.title} — ${item.row.description}`
-                                      : item.row.title
-                                  }
-                                  className="min-w-0 truncate whitespace-nowrap text-xs font-medium text-ink"
-                                >
-                                  {item.row.title}
-                                </p>
-                                {item.row.attachment_url ? (
-                                  <PaperclipIcon className="size-3 shrink-0 text-accent" />
+                              <div className="min-w-0">
+                                <div className="flex min-w-0 items-center gap-1.5">
+                                  <p
+                                    title={item.row.title}
+                                    className="min-w-0 truncate whitespace-nowrap text-[13px] font-medium text-ink"
+                                  >
+                                    {item.row.title}
+                                  </p>
+                                  {item.row.attachment_url ? (
+                                    <PaperclipIcon className="size-3 shrink-0 text-accent" />
+                                  ) : null}
+                                </div>
+                                {excerpt ? (
+                                  <p
+                                    title={excerpt}
+                                    className="mt-0.5 truncate whitespace-nowrap text-[11px] text-ink-muted"
+                                  >
+                                    {excerpt}
+                                  </p>
                                 ) : null}
                               </div>
                             </td>
@@ -1144,7 +1291,7 @@ export function CoordinatorSubmissionsPage() {
                               {item.reportingPeriod}
                             </td>
                             <td
-                              data-label="Submission Date"
+                              data-label="Submitted"
                               className="whitespace-nowrap text-xs tabular-nums text-ink-muted"
                             >
                               {item.submissionDateIso
@@ -1158,182 +1305,175 @@ export function CoordinatorSubmissionsPage() {
                               />
                             </td>
                             <td data-label="Action" className="col-action">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedSubmission(item)}
-                                className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
-                              >
-                                View                                <span className="visually-hidden"> details for {item.internName}</span>
-                              </button>
+                              <RowViewButton
+                                item={item}
+                                onSelect={setSelectedSubmission}
+                              />
                             </td>
                           </tr>
-                        ))}
-                      </tbody>
-                    </>
-                  ) : (
-                    <>
-                      <colgroup>
-                        <col className="w-40" />
-                        <col />
-                        <col className="w-32" />
-                        <col className="w-30" />
-                        <col className="w-30" />
-                        <col className="w-24" />
-                      </colgroup>
-                      <thead>
-                        <tr>
-                          <SortableHeader
-                            columnKey="intern"
-                            label="Intern"
-                            sortKey={sortKey}
-                            sortDir={sortDir}
-                            onSort={handleSort}
-                          />
-                          <SortableHeader
-                            columnKey="title"
-                            label="Task Title"
-                            sortKey={sortKey}
-                            sortDir={sortDir}
-                            onSort={handleSort}
-                          />
-                          <SortableHeader
-                            columnKey="deadline"
-                            label="Deadline"
-                            sortKey={sortKey}
-                            sortDir={sortDir}
-                            onSort={handleSort}
-                          />
-                          <SortableHeader
-                            columnKey="date"
-                            label="Submitted"
-                            sortKey={sortKey}
-                            sortDir={sortDir}
-                            onSort={handleSort}
-                          />
-                          <SortableHeader
-                            columnKey="status"
-                            label="Status"
-                            sortKey={sortKey}
-                            sortDir={sortDir}
-                            onSort={handleSort}
-                          />
-                          <th scope="col" className="col-action whitespace-nowrap">
-                            Action
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paginatedRows.map((item) => {
-                          const effectiveDeadline =
-                            item.row.deadline || item.row.task_date || ''
-                          const deadlineBadge =
-                            item.row.status === 'pending' &&
-                            !item.row.submitted_at &&
-                            effectiveDeadline
-                              ? getDeadlineBadge(effectiveDeadline, todayIso)
-                              : null
+                        )
+                      })}
+                    </tbody>
+                  </>
+                ) : (
+                  <>
+                    <colgroup>
+                      <col className="w-44" />
+                      <col />
+                      <col className="w-30" />
+                      <col className="w-30" />
+                      <col className="w-30" />
+                      <col className="w-22" />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <SortableHeader
+                          columnKey="intern"
+                          label="Intern"
+                          sortKey={sortKey}
+                          sortDir={sortDir}
+                          onSort={handleSort}
+                        />
+                        <SortableHeader
+                          columnKey="title"
+                          label="Task"
+                          sortKey={sortKey}
+                          sortDir={sortDir}
+                          onSort={handleSort}
+                        />
+                        <SortableHeader
+                          columnKey="deadline"
+                          label="Deadline"
+                          sortKey={sortKey}
+                          sortDir={sortDir}
+                          onSort={handleSort}
+                        />
+                        <SortableHeader
+                          columnKey="date"
+                          label="Submitted"
+                          sortKey={sortKey}
+                          sortDir={sortDir}
+                          onSort={handleSort}
+                        />
+                        <SortableHeader
+                          columnKey="status"
+                          label="Status"
+                          sortKey={sortKey}
+                          sortDir={sortDir}
+                          onSort={handleSort}
+                        />
+                        <th scope="col" className="col-action whitespace-nowrap">
+                          Action
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedRows.map((item) => {
+                        const effectiveDeadline =
+                          item.row.deadline || item.row.task_date || ''
+                        const deadlineBadge =
+                          item.row.status === 'pending' &&
+                          !item.row.submitted_at &&
+                          effectiveDeadline
+                            ? getDeadlineBadge(effectiveDeadline, todayIso)
+                            : null
+                        const priorityMeta =
+                          PRIORITY_TEXT_META[item.row.priority] ??
+                          PRIORITY_TEXT_META.medium
 
-                          return (
-                            <tr key={item.key}>
-                              <th scope="row">
-                                <div className="min-w-0">
-                                  <p
-                                    title={item.internName}
-                                    className="truncate whitespace-nowrap text-xs font-semibold text-ink"
-                                  >
-                                    {item.internName}
-                                  </p>
-                                  <p className="mt-0.5 truncate whitespace-nowrap text-[11px] font-normal tabular-nums text-ink-muted">
-                                    {item.studentIdNo || 'No student ID'}
-                                  </p>
-                                </div>
-                              </th>
-                              <td data-label="Task Title">
-                                <div className="min-w-0 space-y-1">
-                                  <p
-                                    title={item.row.title}
-                                    className="truncate whitespace-nowrap text-xs font-medium text-ink"
-                                  >
-                                    {item.row.title}
-                                  </p>
-                                  <div className="flex flex-nowrap items-center gap-2 overflow-hidden">
-                                    <PriorityBadge
-                                      priority={item.row.priority}
-                                    />
-                                    {item.row.submission_attachment_url ? (
-                                      <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] text-accent">
-                                        <PaperclipIcon className="size-3" />
-                                        <span>File</span>
-                                      </span>
-                                    ) : null}
-                                    {item.row.reviewer_remarks?.trim() ? (
-                                      <span className="shrink-0 whitespace-nowrap text-[11px] text-ink-muted">
-                                        Remarks
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                </div>
-                              </td>
-                              <td
-                                data-label="Deadline"
-                                className="whitespace-nowrap text-xs tabular-nums"
-                              >
-                                <span className="block truncate whitespace-nowrap text-ink">
-                                  {effectiveDeadline
-                                    ? formatCalendarDate(effectiveDeadline)
-                                    : '—'}
-                                </span>
-                                {deadlineBadge ? (
-                                  <span
-                                    className={`mt-0.5 block truncate whitespace-nowrap text-[11px] ${DEADLINE_TONE_CLASSES[deadlineBadge.tone]}`}
-                                  >
-                                    {deadlineBadge.label}
-                                  </span>
-                                ) : null}
-                              </td>
-                              <td
-                                data-label="Submission Date"
-                                className="whitespace-nowrap text-xs tabular-nums text-ink-muted"
-                              >
-                                {item.submissionDateIso
-                                  ? formatCalendarDate(item.submissionDateIso)
-                                  : 'Not submitted'}
-                              </td>
-                              <td data-label="Status">
-                                <CoordinatorStatusPill
-                                  statusKey={item.displayStatusKey}
-                                  compact
-                                />
-                              </td>
-                              <td data-label="Action" className="col-action">
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedSubmission(item)}
-                                  className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
+                        return (
+                          <tr key={item.key}>
+                            <InternRowHeader item={item} />
+                            <td data-label="Task">
+                              <div className="min-w-0">
+                                <p
+                                  title={item.row.title}
+                                  className="truncate whitespace-nowrap text-[13px] font-medium text-ink"
                                 >
-                                  View                                  <span className="visually-hidden"> details for {item.internName}</span>
-                                </button>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </>
-                  )}
-                </table>
-              </div>
-            )}
+                                  {item.row.title}
+                                </p>
+                                <div className="mt-0.5 flex flex-nowrap items-center gap-2 overflow-hidden text-[11px]">
+                                  <span
+                                    className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap ${priorityMeta.textClass}`}
+                                  >
+                                    <span
+                                      aria-hidden="true"
+                                      className={`size-1.5 rounded-full ${priorityMeta.dotClass}`}
+                                    />
+                                    <span>{priorityMeta.label}</span>
+                                  </span>
+                                  {item.row.submission_attachment_url ? (
+                                    <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-accent">
+                                      <PaperclipIcon className="size-3" />
+                                      <span>Attachment</span>
+                                    </span>
+                                  ) : null}
+                                  {item.row.reviewer_remarks?.trim() ? (
+                                    <span className="shrink-0 whitespace-nowrap text-ink-muted">
+                                      Remarks
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </td>
+                            <td
+                              data-label="Deadline"
+                              className="whitespace-nowrap text-xs tabular-nums"
+                            >
+                              <span className="block truncate whitespace-nowrap text-ink">
+                                {effectiveDeadline
+                                  ? formatCalendarDate(effectiveDeadline)
+                                  : '—'}
+                              </span>
+                              {deadlineBadge ? (
+                                <span
+                                  className={`mt-0.5 block truncate whitespace-nowrap text-[11px] ${DEADLINE_TONE_CLASSES[deadlineBadge.tone]}`}
+                                >
+                                  {deadlineBadge.label}
+                                </span>
+                              ) : null}
+                            </td>
+                            <td
+                              data-label="Submitted"
+                              className="whitespace-nowrap text-xs tabular-nums text-ink-muted"
+                            >
+                              {item.submissionDateIso
+                                ? formatCalendarDate(item.submissionDateIso)
+                                : '—'}
+                            </td>
+                            <td data-label="Status">
+                              <CoordinatorStatusPill
+                                statusKey={item.displayStatusKey}
+                                compact
+                              />
+                            </td>
+                            <td data-label="Action" className="col-action">
+                              <RowViewButton
+                                item={item}
+                                onSelect={setSelectedSubmission}
+                              />
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </>
+                )}
+              </table>
+            </div>
+          )}
 
-            {/* Pagination Footer */}
-            {tabSubmissions.length > 0 ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-rule bg-surface-subtle px-5 py-3 text-xs text-ink-muted">
-                <div className="flex items-center gap-2">
-                  <label
-                    htmlFor="sub-page-size"
-                    className="whitespace-nowrap font-medium"
-                  >
-                    Rows per page
-                  </label>
+          {/* 5. Slim Pagination Footer */}
+          {tabSubmissions.length > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-rule bg-surface-subtle/50 px-5 py-2.5 text-xs text-ink-muted">
+              <div className="flex items-center gap-2">
+                <label
+                  htmlFor="sub-page-size"
+                  className="whitespace-nowrap"
+                >
+                  Rows per page
+                </label>
+                <div className="relative">
                   <select
                     id="sub-page-size"
                     value={pageSize}
@@ -1341,39 +1481,41 @@ export function CoordinatorSubmissionsPage() {
                       setPageSize(Number(e.target.value))
                       setPage(1)
                     }}
-                    className="h-8 rounded-[4px] border border-input-border bg-surface px-2 text-xs text-ink"
+                    className="ledger-control ledger-select h-7.5 ps-2.5 text-xs tabular-nums text-ink"
                   >
                     <option value={10}>10</option>
                     <option value={25}>25</option>
                     <option value={50}>50</option>
                   </select>
-                </div>
-
-                <div className="flex items-center gap-2 whitespace-nowrap tabular-nums">
-                  <span className="whitespace-nowrap">
-                    Page {safePage} of {totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={safePage <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    className="inline-flex h-8 items-center whitespace-nowrap rounded-[4px] border border-rule bg-surface px-2.5 font-medium text-ink hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Previous
-                  </button>
-                  <button
-                    type="button"
-                    disabled={safePage >= totalPages}
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    className="inline-flex h-8 items-center whitespace-nowrap rounded-[4px] border border-rule bg-surface px-2.5 font-medium text-ink hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Next
-                  </button>
+                  <ChevronDownIcon className="ledger-select-chevron absolute end-2 top-1/2 size-3 -translate-y-1/2 text-ink-muted" />
                 </div>
               </div>
-            ) : null}
-          </div>
-        </section>
+
+              <div className="flex items-center gap-2 whitespace-nowrap tabular-nums">
+                <span className="me-1 whitespace-nowrap">
+                  Page <strong className="font-medium text-ink">{safePage}</strong> of{' '}
+                  {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={safePage <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="ledger-control inline-flex h-7.5 items-center whitespace-nowrap px-2.5 font-medium text-ink hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="ledger-control inline-flex h-7.5 items-center whitespace-nowrap px-2.5 font-medium text-ink hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
       )}
 
       <SubmissionDetailDialog

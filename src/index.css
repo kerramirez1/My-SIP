@@ -954,15 +954,15 @@ dialog.review-drawer-dialog[open]:where(:not([data-closing])) {
 .submission-table.submissions-scroll-table {
   table-layout: fixed;
   inline-size: 100%;
-  min-inline-size: 46rem;
+  min-inline-size: 44rem;
 }
 
 .submission-table.submissions-scroll-table.is-accomplishments {
-  min-inline-size: 46rem;
+  min-inline-size: 45rem;
 }
 
 .submission-table.submissions-scroll-table.is-tasks {
-  min-inline-size: 46rem;
+  min-inline-size: 44rem;
 }
 
 @container submission-table (inline-size >= 42rem) {
@@ -1073,13 +1073,23 @@ dialog.review-drawer-dialog[open]:where(:not([data-closing])) {
 }
 
 .submission-table thead th .sort-chevron {
-  inline-size: 0.875rem;
-  block-size: 0.875rem;
+  inline-size: 0.8125rem;
+  block-size: 0.8125rem;
   flex-shrink: 0;
-  opacity: 0.35;
+  opacity: 0.3;
   transition:
     transform 150ms ease-out,
     opacity 150ms ease-out;
+}
+
+@media (hover: hover) {
+  .submission-table thead th:not([aria-sort]) .sort-chevron {
+    opacity: 0;
+  }
+
+  .submission-table thead th:not([aria-sort]) > button.sort-header:is(:hover, :focus-visible) .sort-chevron {
+    opacity: 0.55;
+  }
 }
 
 .submission-table thead th[aria-sort] > button.sort-header {
@@ -1424,6 +1434,30 @@ progress.loading-spinner:indeterminate {
 }
 
 /* Accessible single-row tabbed interface (tabs + anchor-positioning-tab-underline) */
+@property --tab-fade-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --tab-fade-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes tab-reveal-fade-start {
+  to {
+    --tab-fade-start: 2rem;
+  }
+}
+
+@keyframes tab-hide-fade-end {
+  from {
+    --tab-fade-end: 2rem;
+  }
+}
+
 .sip-tablist {
   position: relative;
   display: flex;
@@ -1432,9 +1466,48 @@ progress.loading-spinner:indeterminate {
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scroll-snap-type: inline proximity;
+  scroll-padding-inline: 2rem;
   scrollbar-width: none;
   border-block-end: 1px solid var(--color-rule);
   padding-inline: 0.75rem;
+  --_fade-dir: right;
+  --_fade-start-pos: 0;
+  --_fade-end-pos: 100%;
+  mask:
+    linear-gradient(black, black) no-clip subtract,
+    linear-gradient(to var(--_fade-dir), black, transparent) var(--_fade-start-pos) 0 / var(--tab-fade-start) 100% no-repeat no-clip,
+    linear-gradient(to var(--_fade-dir), transparent, black) var(--_fade-end-pos) 0 / var(--tab-fade-end) 100% no-repeat no-clip;
+
+  &:dir(rtl) {
+    --_fade-dir: left;
+    --_fade-start-pos: 100%;
+    --_fade-end-pos: 0;
+  }
+
+  @supports (animation-timeline: scroll()) {
+    animation: tab-reveal-fade-start linear both, tab-hide-fade-end linear both;
+    animation-timeline: scroll(self inline);
+    animation-range: 0 2rem, calc(100% - 2rem) 100%;
+  }
+
+  @supports not (animation-timeline: scroll()) {
+    transition:
+      --tab-fade-start 0.2s,
+      --tab-fade-end 0.2s;
+
+    &.more-start {
+      --tab-fade-start: 2rem;
+    }
+
+    &.more-end {
+      --tab-fade-end: 2rem;
+    }
+  }
+}
+
+.sip-tablist.is-page-tabs {
+  padding-inline: 0;
+  gap: 0.5rem;
 }
 
 .sip-tablist::-webkit-scrollbar {
@@ -1511,6 +1584,48 @@ progress.loading-spinner:indeterminate {
   border-radius: 5px;
   background-color: var(--color-surface);
   transition: border-color 140ms ease-out;
+}
+
+.date-range-group.is-subtle {
+  border-color: var(--color-rule);
+  border-radius: 6px;
+}
+
+.date-range-group.is-subtle:hover {
+  border-color: var(--color-input-border);
+}
+
+/* Refined toolbar input and custom-chevron select */
+.ledger-control {
+  border: 1px solid var(--color-rule);
+  border-radius: 6px;
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  transition:
+    border-color 140ms ease-out,
+    background-color 140ms ease-out;
+
+  &:hover:not(:disabled) {
+    border-color: var(--color-input-border);
+  }
+}
+
+.ledger-select {
+  appearance: none;
+  padding-inline-end: 2rem;
+
+  @media (forced-colors: active) {
+    appearance: auto;
+    padding-inline-end: 0.625rem;
+  }
+}
+
+.ledger-select-chevron {
+  pointer-events: none;
+
+  @media (forced-colors: active) {
+    display: none;
+  }
 }
 
 .date-range-group:hover {
