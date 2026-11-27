@@ -13,7 +13,7 @@ export function SupervisorHistoryPage() {
 
   const { profile } = useAuth()
   const supervisorId = profile?.id
-  const { loading, loadError, recentReviews, reload } =
+  const { loading, loadError, reviewHistory, reload } =
     useSupervisorData(supervisorId)
 
   return (
@@ -69,12 +69,12 @@ export function SupervisorHistoryPage() {
               </p>
             </div>
             <span className="text-xs tabular-nums text-ink-muted">
-              {recentReviews.length}{' '}
-              {recentReviews.length === 1 ? 'review' : 'reviews'}
+              {reviewHistory.length}{' '}
+              {reviewHistory.length === 1 ? 'review' : 'reviews'}
             </span>
           </div>
 
-          {recentReviews.length === 0 ? (
+          {reviewHistory.length === 0 ? (
             <div className="px-5 py-10 text-sm text-ink-muted">
               No reviews completed yet.
             </div>
@@ -108,7 +108,7 @@ export function SupervisorHistoryPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {recentReviews.map((item) => {
+                  {reviewHistory.map((item) => {
                     const reviewedDateIso = extractIsoDatePart(item.reviewedAt)
                     return (
                       <tr key={item.key}>

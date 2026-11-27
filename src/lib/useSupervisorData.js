@@ -211,8 +211,8 @@ export function useSupervisorData(supervisorId) {
       ...pendingTasks,
     ].sort((a, b) => String(b.sortAt).localeCompare(String(a.sortAt)))
 
-    // Recent reviews history: latest 10 rows reviewed by this supervisor
-    const recentReviews = [
+    // Review history: all rows reviewed by this supervisor, newest first
+    const allReviews = [
       ...attendance
         .filter((row) => row.reviewed_by === supervisorId && row.reviewed_at)
         .map((row) => {
@@ -257,9 +257,9 @@ export function useSupervisorData(supervisorId) {
           remarks: row.reviewer_remarks,
           reviewedAt: row.reviewed_at,
         })),
-    ]
-      .sort((a, b) => String(b.reviewedAt).localeCompare(String(a.reviewedAt)))
-      .slice(0, 10)
+    ].sort((a, b) => String(b.reviewedAt).localeCompare(String(a.reviewedAt)))
+
+    const recentReviews = allReviews.slice(0, 10)
 
     return {
       interns,
@@ -273,6 +273,7 @@ export function useSupervisorData(supervisorId) {
         tasks: pendingTasks.length,
       },
       recentReviews,
+      reviewHistory: allReviews,
     }
   }, [
     dataState.accomplishments,
@@ -292,6 +293,7 @@ export function useSupervisorData(supervisorId) {
     pendingItems: derived.pendingItems,
     pendingCounts: derived.pendingCounts,
     recentReviews: derived.recentReviews,
+    reviewHistory: derived.reviewHistory,
     reload,
   }
 }
