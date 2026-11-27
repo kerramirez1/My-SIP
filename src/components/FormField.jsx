@@ -11,6 +11,7 @@ export function FormField({
   autoCorrect,
   autoFocus = false,
   required = false,
+  requiredIndicator = false,
   disabled = false,
   min,
   max,
@@ -24,7 +25,9 @@ export function FormField({
   inputRef,
   value,
   onChange,
+  leadingIcon = null,
   trailingAction = null,
+  inputClassName = '',
 }) {
   const hintId = hint ? `${id}-hint` : undefined
   const errorId = validationMessage ? `${id}-error` : undefined
@@ -38,6 +41,11 @@ export function FormField({
         className="text-sm font-medium leading-[1.4] text-ink transition-colors"
       >
         {label}
+        {required && requiredIndicator ? (
+          <span aria-hidden="true" className="ms-0.5 text-error">
+            *
+          </span>
+        ) : null}
       </label>
       {hint ? (
         <span id={hintId} className="text-xs leading-[1.4] text-ink-muted">
@@ -60,10 +68,18 @@ export function FormField({
           data-error={errorId}
           value={value}
           onChange={onChange}
-          className={`${sharedClasses} min-h-24 resize-y`}
+          className={`${sharedClasses} min-h-24 resize-y ${inputClassName}`}
         />
       ) : (
         <div className="relative flex items-center">
+          {leadingIcon ? (
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-s-3.5 flex items-center text-ink-muted"
+            >
+              {leadingIcon}
+            </span>
+          ) : null}
           <input
             ref={inputRef}
             id={id}
@@ -88,7 +104,7 @@ export function FormField({
             data-error={errorId}
             value={value}
             onChange={onChange}
-            className={`${sharedClasses} min-h-11 ${trailingAction ? 'pe-18' : ''}`}
+            className={`${sharedClasses} min-h-11 ${leadingIcon ? 'ps-10' : ''} ${trailingAction ? 'pe-22' : ''} ${inputClassName}`}
           />
           {trailingAction ? (
             <div className="absolute inset-e-1.5 flex items-center">

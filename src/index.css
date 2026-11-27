@@ -1734,8 +1734,83 @@ progress.loading-spinner:indeterminate {
   cursor: not-allowed;
 }
 
+/* Institutional authentication split showcase & elevated card */
+.auth-brand-panel {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background-color: #102a52;
+  background-image:
+    radial-gradient(
+      115% 80% at 0% 0%,
+      rgb(43 108 198 / 0.42) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      90% 70% at 100% 100%,
+      rgb(8 22 46 / 0.72) 0%,
+      transparent 70%
+    ),
+    linear-gradient(160deg, #163d77 0%, #102b54 55%, #0b1f3d 100%);
+  color: #f8fafc;
+}
+
+.auth-brand-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgb(255 255 255 / 0.055) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / 0.055) 1px, transparent 1px);
+  background-size: 3rem 3rem;
+  mask-image: linear-gradient(
+    180deg,
+    rgb(0 0 0 / 0.7) 0%,
+    rgb(0 0 0 / 0.16) 72%,
+    transparent 100%
+  );
+}
+
+.auth-card {
+  box-shadow:
+    0 14px 36px -18px rgb(15 23 42 / 0.14),
+    0 1px 3px rgb(15 23 42 / 0.05);
+}
+
+@container style(--resolved-scheme: dark) {
+  .auth-card {
+    box-shadow: 0 18px 42px -20px rgb(0 0 0 / 0.6);
+  }
+}
+
+.auth-btn-spinner {
+  inline-size: 1rem;
+  block-size: 1rem;
+  border-radius: 9999px;
+  border: 2px solid rgb(255 255 255 / 0.32);
+  border-block-start-color: currentColor;
+  animation: progress-spin 0.75s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-btn-spinner {
+    animation-duration: 2.5s;
+  }
+}
+
 /* Forced Colors Mode (Windows High Contrast) fallbacks */
 @media (forced-colors: active) {
+  .auth-brand-panel {
+    background-image: none;
+    border-inline-end: 1px solid CanvasText;
+  }
+
+  .auth-card {
+    border: 1px solid CanvasText;
+    box-shadow: none;
+  }
   :where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
     outline: 2px solid Highlight;
   }
