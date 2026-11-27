@@ -55,6 +55,41 @@ export function ProtectedRoute({ allowedRole }) {
     )
   }
 
+  if (profile.is_active === false) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center bg-surface px-6">
+        <section
+          role="alert"
+          className="w-full max-w-md rounded-[6px] border border-error-border/50 bg-surface p-6"
+        >
+          <h1 className="text-lg font-semibold text-ink">
+            Account deactivated
+          </h1>
+          <p className="mt-2 text-sm leading-[1.55] text-ink-muted">
+            Your portal account has been deactivated by the SIP Coordinator.
+            Your historical internship records remain preserved, but portal
+            access is currently disabled.
+          </p>
+          {profile.deactivated_reason ? (
+            <p className="mt-3 rounded-[5px] border border-rule bg-surface-subtle px-3.5 py-2.5 text-xs text-ink">
+              <strong className="font-medium">Reason:</strong>{' '}
+              {profile.deactivated_reason}
+            </p>
+          ) : null}
+          <div className="mt-5">
+            <button
+              type="button"
+              onClick={logout}
+              className="inline-flex min-h-10 items-center justify-center rounded-[5px] bg-accent-solid px-4 text-sm font-medium text-on-accent hover:bg-accent-solid-hover"
+            >
+              Return to log in
+            </button>
+          </div>
+        </section>
+      </main>
+    )
+  }
+
   if (allowedRole && profile.role !== allowedRole) {
     return <Navigate to={getDashboardPathForRole(profile.role)} replace />
   }

@@ -803,6 +803,79 @@ dialog.form-dialog[open]:where(:not([data-closing])) {
   }
 }
 
+/* Right-side review detail drawer dialog (full-screen on mobile) */
+dialog.review-drawer-dialog {
+  --drawer-width: min(42rem, 94dvw);
+  inset-block: 0;
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+  inline-size: var(--drawer-width);
+  block-size: 100dvh;
+  max-inline-size: none;
+  max-block-size: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-inline-start: 1px solid var(--color-rule);
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  overflow: hidden;
+  opacity: 0;
+  transition-property: opacity, translate, display, overlay;
+  transition-duration: 0.22s;
+  transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
+
+  @media (prefers-reduced-motion: no-preference) {
+    translate: 100% 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition-duration: 0.1s;
+  }
+
+  @media (max-width: 39.999rem) {
+    inline-size: 100dvw;
+    border-inline-start: 0;
+  }
+}
+
+dialog.review-drawer-dialog::backdrop {
+  background-color: rgb(0 0 0 / 0);
+  transition-property: background-color, display, overlay;
+  transition-duration: 0.22s;
+  transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
+
+  @media (prefers-reduced-motion: reduce) {
+    transition-duration: 0.1s;
+  }
+}
+
+dialog.review-drawer-dialog[open]:where(:not([data-closing])) {
+  opacity: 1;
+
+  @starting-style {
+    opacity: 0;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    translate: 0 0;
+
+    @starting-style {
+      translate: 100% 0;
+    }
+  }
+
+  &::backdrop {
+    background-color: var(--color-backdrop-scrim);
+
+    @starting-style {
+      background-color: rgb(0 0 0 / 0);
+    }
+  }
+}
+
 /* Responsive data tables using named container queries */
 .table-wrapper {
   container: submission-table / inline-size;
@@ -875,6 +948,96 @@ dialog.form-dialog[open]:where(:not([data-closing])) {
 
 .submission-table.is-compact :is(thead, tbody, tfoot) tr > :last-child {
   padding-inline-end: 1.25rem;
+}
+
+/* Single-line table for Submissions & Reviews (fits laptop widths; scrolls on small screens) */
+.submission-table.submissions-scroll-table {
+  table-layout: fixed;
+  inline-size: 100%;
+  min-inline-size: 46rem;
+}
+
+.submission-table.submissions-scroll-table.is-accomplishments {
+  min-inline-size: 46rem;
+}
+
+.submission-table.submissions-scroll-table.is-tasks {
+  min-inline-size: 46rem;
+}
+
+@container submission-table (inline-size >= 42rem) {
+  .submission-table.supervisor-compact-table {
+    table-layout: fixed;
+    min-inline-size: 54rem;
+  }
+
+  .submission-table.supervisor-compact-table thead th {
+    white-space: nowrap;
+    text-wrap: nowrap;
+  }
+
+  .submission-table.supervisor-compact-table tbody :is(th, td) {
+    padding: 0.75rem 0.875rem;
+    vertical-align: middle;
+  }
+
+  .submission-table.supervisor-compact-table :is(thead, tbody, tfoot) tr > :first-child {
+    padding-inline-start: 1.25rem;
+  }
+
+  .submission-table.supervisor-compact-table :is(thead, tbody, tfoot) tr > :last-child {
+    padding-inline-end: 1.25rem;
+  }
+}
+
+.submission-table.submissions-scroll-table thead th,
+.submission-table.submissions-scroll-table thead th > button.sort-header {
+  white-space: nowrap;
+  text-wrap: nowrap;
+}
+
+.submission-table.submissions-scroll-table.is-compact thead th {
+  padding: 0.6875rem 0.75rem;
+}
+
+.submission-table.submissions-scroll-table thead th > button.sort-header {
+  padding: 0.625rem 0.75rem;
+}
+
+.submission-table.submissions-scroll-table.is-compact tbody :is(th, td) {
+  padding: 0.75rem 0.75rem;
+  vertical-align: middle;
+}
+
+.submission-table.submissions-scroll-table.is-compact :is(thead, tbody, tfoot) tr > :first-child {
+  padding-inline-start: 1.25rem;
+}
+
+.submission-table.submissions-scroll-table.is-compact thead tr > th:first-child > button.sort-header {
+  padding-inline-start: 1.25rem;
+}
+
+.submission-table.submissions-scroll-table.is-compact :is(thead, tbody, tfoot) tr > :last-child {
+  padding-inline-end: 1.25rem;
+}
+
+/* Keep sticky first-column header anchored during horizontal table scroll */
+.submission-table.submissions-scroll-table thead th:first-child {
+  inset-inline-start: 0;
+  z-index: 2;
+}
+
+/* Sortable headers: padding lives on the button only, so labels align with cell content */
+.submission-table.submissions-scroll-table.is-compact thead tr > th:has(> button.sort-header) {
+  padding: 0;
+}
+
+.submission-table.submissions-scroll-table.is-compact thead th > button.sort-header {
+  padding: 0.6875rem 0.75rem;
+}
+
+.submission-table.submissions-scroll-table.is-compact thead tr > th:first-child > button.sort-header {
+  padding-inline-start: 1.25rem;
 }
 
 .submission-table thead th:has(> button.sort-header) {
@@ -957,36 +1120,36 @@ dialog.form-dialog[open]:where(:not([data-closing])) {
 }
 
 @container submission-table (inline-size < 42rem) {
-  .submission-table,
-  .submission-table thead,
-  .submission-table tbody,
-  .submission-table tfoot,
-  .submission-table tr,
-  .submission-table th,
-  .submission-table td {
+  .submission-table:not(.submissions-scroll-table),
+  .submission-table:not(.submissions-scroll-table) thead,
+  .submission-table:not(.submissions-scroll-table) tbody,
+  .submission-table:not(.submissions-scroll-table) tfoot,
+  .submission-table:not(.submissions-scroll-table) tr,
+  .submission-table:not(.submissions-scroll-table) th,
+  .submission-table:not(.submissions-scroll-table) td {
     display: block;
   }
 
-  .submission-table thead {
+  .submission-table:not(.submissions-scroll-table) thead {
     display: none;
   }
 
-  .submission-table :is(tbody, tfoot) tr {
+  .submission-table:not(.submissions-scroll-table) :is(tbody, tfoot) tr {
     border-block-end: 1px solid var(--color-rule);
     background-color: var(--color-surface);
   }
 
-  .submission-table tfoot tr {
+  .submission-table:not(.submissions-scroll-table) tfoot tr {
     border-block-start: 2px solid var(--color-rule);
     background-color: var(--color-surface-subtle);
   }
 
-  .submission-table tbody tr:last-child,
-  .submission-table tfoot tr:last-child {
+  .submission-table:not(.submissions-scroll-table) tbody tr:last-child,
+  .submission-table:not(.submissions-scroll-table) tfoot tr:last-child {
     border-block-end: 0;
   }
 
-  .submission-table :is(tbody, tfoot) th[scope="row"] {
+  .submission-table:not(.submissions-scroll-table) :is(tbody, tfoot) th[scope="row"] {
     position: sticky;
     inset-block-start: 0;
     z-index: 2;
@@ -996,8 +1159,8 @@ dialog.form-dialog[open]:where(:not([data-closing])) {
     font-weight: 600;
   }
 
-  .submission-table :is(tbody, tfoot) td,
-  .submission-table.is-compact :is(tbody, tfoot) td {
+  .submission-table:not(.submissions-scroll-table) :is(tbody, tfoot) td,
+  .submission-table:not(.submissions-scroll-table).is-compact :is(tbody, tfoot) td {
     display: grid;
     grid-template-columns: 8.5rem 1fr;
     gap: 0.75rem;
@@ -1007,17 +1170,17 @@ dialog.form-dialog[open]:where(:not([data-closing])) {
     border-block-end: 1px solid color-mix(in oklab, var(--color-rule) 55%, transparent);
   }
 
-  .submission-table :is(tbody, tfoot) td.col-action,
-  .submission-table :is(tbody, tfoot) td.col-num {
+  .submission-table:not(.submissions-scroll-table) :is(tbody, tfoot) td.col-action,
+  .submission-table:not(.submissions-scroll-table) :is(tbody, tfoot) td.col-num {
     text-align: start;
     justify-items: start;
   }
 
-  .submission-table :is(tbody, tfoot) td:last-child {
+  .submission-table:not(.submissions-scroll-table) :is(tbody, tfoot) td:last-child {
     border-block-end: 0;
   }
 
-  .submission-table :is(tbody, tfoot) td[data-label]::before {
+  .submission-table:not(.submissions-scroll-table) :is(tbody, tfoot) td[data-label]::before {
     content: attr(data-label);
     font-size: 0.75rem;
     font-weight: 600;
@@ -1260,20 +1423,40 @@ progress.loading-spinner:indeterminate {
   }
 }
 
-/* Accessible single-row tabbed interface (modern-web-guidance tabs pattern) */
+/* Accessible single-row tabbed interface (tabs + anchor-positioning-tab-underline) */
 .sip-tablist {
+  position: relative;
   display: flex;
   flex-wrap: nowrap;
   gap: 0.25rem;
   overflow-x: auto;
   overscroll-behavior-x: contain;
+  scroll-snap-type: inline proximity;
   scrollbar-width: none;
   border-block-end: 1px solid var(--color-rule);
-  padding-inline: 0.25rem;
+  padding-inline: 0.75rem;
 }
 
 .sip-tablist::-webkit-scrollbar {
   display: none;
+}
+
+/* Smooth anchor-positioned active underline on the tablist container */
+.sip-tablist::before {
+  content: "";
+  position: absolute;
+  position-anchor: --active-sip-tab;
+  inset-block-end: 0;
+  inset-inline-start: anchor(self-start);
+  inset-inline-end: anchor(self-end);
+  border-block-end: 3px solid var(--color-accent);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sip-tablist::before {
+    transition: inset 180ms ease-out;
+  }
 }
 
 .sip-tablist > [role="tab"] {
@@ -1281,14 +1464,16 @@ progress.loading-spinner:indeterminate {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  flex-shrink: 0;
+  flex: none;
   white-space: nowrap;
-  min-block-size: 2.75rem;
+  scroll-snap-align: start;
+  min-block-size: 2.875rem;
   padding: 0.625rem 0.875rem;
   border: 0;
   background: transparent;
   color: var(--color-ink-muted);
   font-size: 0.875rem;
+  /* Constant font-weight avoids horizontal dimension shift when switching tabs */
   font-weight: 500;
   cursor: pointer;
 }
@@ -1298,16 +1483,140 @@ progress.loading-spinner:indeterminate {
 }
 
 .sip-tablist > [role="tab"][aria-selected="true"] {
+  anchor-name: --active-sip-tab;
   color: var(--color-accent);
-  font-weight: 600;
 }
 
-.sip-tablist > [role="tab"][aria-selected="true"]::after {
-  content: "";
-  position: absolute;
-  inset-inline: 0.25rem;
-  inset-block-end: 0;
-  border-block-end: 3px solid var(--color-accent);
+/* Fallback when CSS Anchor Positioning is unsupported */
+@supports not (position-anchor: --active-sip-tab) {
+  .sip-tablist::before {
+    content: none;
+  }
+
+  .sip-tablist > [role="tab"][aria-selected="true"]::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    inset-block-end: 0;
+    border-block-end: 3px solid var(--color-accent);
+  }
+}
+
+/* Unified composite Date Range control */
+.date-range-group {
+  display: flex;
+  align-items: center;
+  min-block-size: max(2.25rem, var(--target-size));
+  border: 1px solid var(--color-input-border);
+  border-radius: 5px;
+  background-color: var(--color-surface);
+  transition: border-color 140ms ease-out;
+}
+
+.date-range-group:hover {
+  border-color: var(--color-ink);
+}
+
+.date-range-group:focus-within {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.date-range-group > input[type="date"] {
+  min-inline-size: 0;
+  flex: 1 1 0%;
+  min-block-size: calc(max(2.25rem, var(--target-size)) - 2px);
+  padding-inline: 0.5rem;
+  border: 0;
+  background: transparent;
+  color: var(--color-ink);
+  font-size: 0.75rem;
+}
+
+.date-range-group > input[type="date"]:focus-visible {
+  outline: none;
+}
+
+/* Top-layer row Action Menu Popover (CSS Anchor Positioning + viewport fallback) */
+.account-menu-popover {
+  min-inline-size: 12.25rem;
+  padding: 0.25rem;
+  border: 1px solid var(--color-rule);
+  border-radius: 6px;
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  box-shadow: 0 8px 20px -6px rgb(20 23 29 / 0.16);
+}
+
+@supports (position-area: block-end) {
+  .account-menu-popover {
+    inset: auto;
+    margin: 0;
+    margin-block-start: 0.25rem;
+    position-area: block-end span-inline-start;
+    position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+  }
+}
+
+@supports not (position-area: block-end) {
+  .account-menu-popover {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .account-menu-popover {
+    opacity: 0;
+    transition: opacity 0.12s ease-out, display 0.12s ease-out, overlay 0.12s ease-out;
+    transition-behavior: allow-discrete;
+  }
+
+  .account-menu-popover:popover-open {
+    opacity: 1;
+
+    @starting-style {
+      opacity: 0;
+    }
+  }
+}
+
+.account-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  inline-size: 100%;
+  min-block-size: 2.25rem;
+  padding: 0.4375rem 0.625rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-ink);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-align: start;
+  cursor: pointer;
+}
+
+.account-menu-item:hover:not(:disabled),
+.account-menu-item:focus-visible:not(:disabled) {
+  background-color: var(--color-surface-subtle);
+}
+
+.account-menu-item.is-danger {
+  color: var(--color-error);
+}
+
+.account-menu-item.is-danger:hover:not(:disabled),
+.account-menu-item.is-danger:focus-visible:not(:disabled) {
+  background-color: var(--color-error-tint);
+}
+
+.account-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Forced Colors Mode (Windows High Contrast) fallbacks */
@@ -1321,6 +1630,11 @@ progress.loading-spinner:indeterminate {
     outline: 1px solid Highlight;
   }
 
+  .sip-tablist::before,
+  .sip-tablist > [role="tab"][aria-selected="true"]::after {
+    border-block-end-color: Highlight;
+  }
+
   .breadcrumb > ol > li > a[aria-current="page"] {
     text-decoration: underline;
     text-underline-offset: 4px;
@@ -1332,6 +1646,10 @@ progress.loading-spinner:indeterminate {
 
   dialog.form-dialog {
     border: 2px solid CanvasText;
+  }
+
+  dialog.review-drawer-dialog {
+    border-inline-start: 2px solid CanvasText;
   }
 
   progress.internship-progress {

@@ -23,7 +23,7 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
 
-  if (!loading && user && profile?.role) {
+  if (!loading && user && profile?.role && profile?.is_active !== false) {
     return <Navigate to={getDashboardPathForRole(profile.role)} replace />
   }
 
@@ -46,11 +46,18 @@ export function LoginPage() {
     })
 
     if (error) {
-      setErrorMessage(
-        error.message === 'Invalid login credentials'
-          ? 'Invalid email address or password.'
-          : error.message,
-      )
+      const lower = (error.message ?? '').toLowerCase()
+      if (lower.includes('user is banned')) {
+        setErrorMessage(
+          'Your account has been deactivated. Contact your SIP Coordinator for assistance.',
+        )
+      } else {
+        setErrorMessage(
+          error.message === 'Invalid login credentials'
+            ? 'Invalid email address or password.'
+            : error.message,
+        )
+      }
       setSubmitting(false)
       return
     }
@@ -64,7 +71,7 @@ export function LoginPage() {
 
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role, is_active')
       .eq('id', signedInUser.id)
       .single()
 
@@ -72,6 +79,15 @@ export function LoginPage() {
       await supabase.auth.signOut()
       setErrorMessage(
         'Your account profile could not be loaded. Contact your SIP Coordinator.',
+      )
+      setSubmitting(false)
+      return
+    }
+
+    if (profileData.is_active === false) {
+      await supabase.auth.signOut()
+      setErrorMessage(
+        'Your account has been deactivated. Contact your SIP Coordinator for assistance.',
       )
       setSubmitting(false)
       return

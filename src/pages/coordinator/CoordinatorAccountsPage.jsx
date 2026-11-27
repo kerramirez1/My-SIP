@@ -4,15 +4,26 @@ import { FormField } from '../../components/FormField'
 import { PlusIcon } from '../../components/Icons'
 import { SubmissionDialog } from '../../components/SubmissionDialog'
 import { useAuth } from '../../context/useAuth'
+import { extractEdgeFunctionError } from '../../lib/edgeFunctionUtils'
 import { DEFAULT_REQUIRED_INTERNSHIP_HOURS } from '../../lib/internDashboardUtils'
 import { supabase } from '../../lib/supabaseClient'
 import { useDocumentTitle } from '../../lib/useDocumentTitle'
 import { useFormValidationSync } from '../../lib/useFormValidationSync'
 import { formatCalendarDate } from '../../lib/weekUtils'
+import {
+  AccountActionMenu,
+  AccountStatusBadge,
+  DeactivateAccountDialog,
+  DeleteAccountDialog,
+  EditAccountDialog,
+  ReactivateAccountDialog,
+  ViewAccountDialog,
+} from './CoordinatorAccountDialogs'
 
 const EMPTY_DATA_STATE = {
   loadedKey: '',
-  profiles: [],
+  accounts: [],
+  auditLogs: [],
   error: '',
 }
 
@@ -20,6 +31,29 @@ const ROLE_LABELS = {
   intern: 'Intern',
   supervisor: 'Supervisor',
   coordinator: 'Coordinator',
+}
+
+const AUDIT_ACTION_META = {
+  created: {
+    label: 'Created',
+    className: 'border-accent/40 bg-accent-tint text-accent',
+  },
+  updated: {
+    label: 'Updated',
+    className: 'border-rule bg-surface-subtle text-ink-muted',
+  },
+  deactivated: {
+    label: 'Deactivated',
+    className: 'border-error-border/40 bg-error-tint text-error',
+  },
+  reactivated: {
+    label: 'Reactivated',
+    className: 'border-success-border/45 bg-success-tint text-success',
+  },
+  deleted: {
+    label: 'Deleted',
+    className: 'border-rejected-border bg-rejected-bg text-on-accent',
+  },
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -31,37 +65,17 @@ function setFieldInvalidFallback(input, invalid) {
   input.closest('.field-group')?.classList.toggle('has-error-fallback', invalid)
 }
 
-async function extractFunctionErrorMessage(error) {
-  const response = error?.context
-  if (response) {
-    if (typeof response.clone === 'function') {
-      try {
-        const parsed = await response.clone().json()
-        if (parsed && typeof parsed.error === 'string' && parsed.error.trim()) {
-          return parsed.error.trim()
-        }
-      } catch {
-        // Fall through to text fallback
-      }
-      try {
-        const text = (await response.clone().text())?.trim()
-        if (text) return text
-      } catch {
-        // Fall through to generic message
-      }
-    } else if (typeof response.json === 'function') {
-      try {
-        const parsed = await response.json()
-        if (parsed && typeof parsed.error === 'string' && parsed.error.trim()) {
-          return parsed.error.trim()
-        }
-      } catch {
-        // Fall through to generic message
-      }
-    }
-  }
-
-  return error?.message || 'Could not create account. Please try again.'
+function formatAuditTimestamp(isoString) {
+  if (!isoString) return '—'
+  const date = new Date(isoString)
+  if (Number.isNaN(date.getTime())) return isoString
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)
 }
 
 function CreateAccountForm({ supervisors, supervisorById, onClose, onCreated }) {
@@ -146,14 +160,14 @@ function CreateAccountForm({ supervisors, supervisorById, onClose, onCreated }) 
     let parsedRequiredHours = DEFAULT_REQUIRED_INTERNSHIP_HOURS
     if (isIntern) {
       if (supervisors.length === 0 || !selectedSupervisorId) {
-        setFormError('Create a supervisor account first.')
+        setFormError('Create an active supervisor account first.')
         setFieldInvalidFallback(supervisorRef.current, true)
         supervisorRef.current?.focus()
         return
       }
 
       if (!supervisorById.has(selectedSupervisorId)) {
-        setFormError('Please select an existing supervisor account.')
+        setFormError('Please select an active supervisor account.')
         setFieldInvalidFallback(supervisorRef.current, true)
         supervisorRef.current?.focus()
         return
@@ -202,8 +216,11 @@ function CreateAccountForm({ supervisors, supervisorById, onClose, onCreated }) 
     })
 
     if (error) {
-      const message = await extractFunctionErrorMessage(error)
-      setFormError(message)
+      const parsed = await extractEdgeFunctionError(
+        error,
+        'Could not create account. Please try again.',
+      )
+      setFormError(parsed.message)
       setSaving(false)
       return
     }
@@ -344,7 +361,7 @@ function CreateAccountForm({ supervisors, supervisorById, onClose, onCreated }) 
                   id="create-account-supervisor-hint"
                   className="text-xs leading-[1.4] text-error"
                 >
-                  Create a supervisor account first.
+                  Create an active supervisor account first.
                 </span>
               ) : null}
               <select
@@ -368,7 +385,7 @@ function CreateAccountForm({ supervisors, supervisorById, onClose, onCreated }) 
                 className="form-control min-h-11 w-full rounded-[5px] border border-input-border bg-surface px-3.5 py-2.5 text-[max(1rem,1em)] text-ink transition-colors hover:border-ink disabled:cursor-not-allowed disabled:bg-canvas disabled:opacity-70 sm:text-sm"
               >
                 {missingSupervisorsForIntern ? (
-                  <option value="">No supervisors available</option>
+                  <option value="">No active supervisors available</option>
                 ) : (
                   supervisors.map((sup) => (
                     <option key={sup.id} value={sup.id}>
@@ -518,8 +535,17 @@ export function CoordinatorAccountsPage() {
   const [dataState, setDataState] = useState(EMPTY_DATA_STATE)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [createdCredentials, setCreatedCredentials] = useState(null)
+  const [actionBanner, setActionBanner] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
+
+  // Account lifecycle dialog targets
+  const [viewTarget, setViewTarget] = useState(null)
+  const [editTarget, setEditTarget] = useState(null)
+  const [deactivateTarget, setDeactivateTarget] = useState(null)
+  const [reactivateTarget, setReactivateTarget] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)
 
   const reload = useCallback(() => {
     setReloadCounter((count) => count + 1)
@@ -532,6 +558,16 @@ export function CoordinatorAccountsPage() {
   const handleCreated = useCallback(
     (credentials) => {
       setCreatedCredentials(credentials)
+      setActionBanner('')
+      reload()
+    },
+    [reload],
+  )
+
+  const handleLifecycleSuccess = useCallback(
+    (message) => {
+      setActionBanner(message)
+      setCreatedCredentials(null)
       reload()
     },
     [reload],
@@ -546,26 +582,63 @@ export function CoordinatorAccountsPage() {
 
     let active = true
 
-    supabase
-      .from('profiles')
-      .select(
-        'id, full_name, role, supervisor_id, student_id_no, company_name, school_name, course, internship_start_date, required_hours, created_at',
-      )
-      .order('role', { ascending: true })
-      .order('full_name', { ascending: true })
-      .then(({ data, error }) => {
+    supabase.functions
+      .invoke('manage-account', {
+        body: { action: 'list_accounts' },
+      })
+      .then(async ({ data, error }) => {
         if (!active) return
+        if (!error && data && !data.error && Array.isArray(data.accounts)) {
+          setDataState({
+            loadedKey: currentQueryKey,
+            accounts: data.accounts,
+            auditLogs: Array.isArray(data.audit_logs) ? data.audit_logs : [],
+            error: '',
+          })
+          return
+        }
+
+        const parsedErr = error
+          ? await extractEdgeFunctionError(
+              error,
+              'Could not load account management service.',
+            )
+          : { message: data?.error || 'Could not load accounts.' }
+
+        // Fallback to direct profiles read so accounts remain visible even if
+        // manage-account Edge Function is temporarily unreachable
+        const { data: fallbackProfiles, error: fallbackErr } = await supabase
+          .from('profiles')
+          .select(
+            'id, full_name, role, supervisor_id, student_id_no, company_name, school_name, course, internship_start_date, required_hours, is_active, deactivated_at, deactivated_reason, created_at',
+          )
+          .order('role', { ascending: true })
+          .order('full_name', { ascending: true })
+
+        if (!active) return
+
         setDataState({
           loadedKey: currentQueryKey,
-          profiles: error ? [] : (data ?? []),
-          error: error ? error.message : '',
+          accounts: fallbackErr
+            ? []
+            : (fallbackProfiles ?? []).map((p) => ({
+                ...p,
+                is_active: p.is_active !== false,
+                email: '',
+                is_self: p.id === coordinatorId,
+                record_summary: null,
+              })),
+          auditLogs: [],
+          error: fallbackErr
+            ? fallbackErr.message
+            : `Account service warning: ${parsedErr.message}`,
         })
       })
 
     return () => {
       active = false
     }
-  }, [currentQueryKey])
+  }, [coordinatorId, currentQueryKey])
 
   const loading = Boolean(
     supabase && currentQueryKey && dataState.loadedKey !== currentQueryKey,
@@ -574,40 +647,47 @@ export function CoordinatorAccountsPage() {
   const loadError = hasLoaded ? dataState.error : ''
 
   const derived = useMemo(() => {
-    const accounts = hasLoaded ? dataState.profiles : []
+    const accounts = hasLoaded ? dataState.accounts : []
+    const auditLogs = hasLoaded ? dataState.auditLogs : []
     const profileById = new Map(accounts.map((row) => [row.id, row]))
     const supervisors = accounts.filter((row) => row.role === 'supervisor')
-    const supervisorById = new Map(supervisors.map((row) => [row.id, row]))
+    const activeSupervisors = supervisors.filter((row) => row.is_active !== false)
+    const activeSupervisorById = new Map(
+      activeSupervisors.map((row) => [row.id, row]),
+    )
 
     let internsCount = 0
     let supervisorsCount = 0
-    let coordinatorsCount = 0
+    let deactivatedCount = 0
     let unassignedInternsCount = 0
 
     for (const row of accounts) {
+      if (row.is_active === false) deactivatedCount += 1
       if (row.role === 'intern') {
         internsCount += 1
-        if (!row.supervisor_id) unassignedInternsCount += 1
+        if (!row.supervisor_id && row.is_active !== false) {
+          unassignedInternsCount += 1
+        }
       } else if (row.role === 'supervisor') {
         supervisorsCount += 1
-      } else if (row.role === 'coordinator') {
-        coordinatorsCount += 1
       }
     }
 
     return {
       accounts,
+      auditLogs,
       profileById,
       supervisors,
-      supervisorById,
+      activeSupervisors,
+      activeSupervisorById,
       counts: {
         interns: internsCount,
         supervisors: supervisorsCount,
-        coordinators: coordinatorsCount,
+        deactivated: deactivatedCount,
         unassignedInterns: unassignedInternsCount,
       },
     }
-  }, [dataState.profiles, hasLoaded])
+  }, [dataState.accounts, dataState.auditLogs, hasLoaded])
 
   const visibleAccounts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
@@ -617,12 +697,18 @@ export function CoordinatorAccountsPage() {
       } else if (roleFilter !== 'all' && account.role !== roleFilter) {
         return false
       }
+
+      const isActive = account.is_active !== false
+      if (statusFilter === 'active' && !isActive) return false
+      if (statusFilter === 'deactivated' && isActive) return false
+
       if (!q) return true
       const supName = account.supervisor_id
         ? (derived.profileById.get(account.supervisor_id)?.full_name ?? '')
         : ''
       const haystack = [
         account.full_name,
+        account.email,
         account.student_id_no,
         account.company_name,
         account.school_name,
@@ -635,7 +721,7 @@ export function CoordinatorAccountsPage() {
         .toLowerCase()
       return haystack.includes(q)
     })
-  }, [derived.accounts, derived.profileById, roleFilter, searchQuery])
+  }, [derived.accounts, derived.profileById, roleFilter, searchQuery, statusFilter])
 
   return (
     <div className="max-w-6xl space-y-6">
@@ -648,9 +734,9 @@ export function CoordinatorAccountsPage() {
           >
             Account Management
           </h1>
-          <p className="mt-1.5 max-w-[64ch] text-sm leading-[1.55] text-ink-muted">
-            Create intern and supervisor accounts, assign supervisors, and
-            maintain official internship enrollment profiles.
+          <p className="mt-1.5 max-w-[66ch] text-sm leading-[1.55] text-ink-muted">
+            Create, edit, deactivate, reactivate, or safely remove intern and
+            supervisor accounts while preserving historical internship records.
           </p>
         </div>
 
@@ -663,6 +749,10 @@ export function CoordinatorAccountsPage() {
           <span>Create account</span>
         </button>
       </header>
+
+      {actionBanner ? (
+        <AlertMessage message={actionBanner} variant="success" />
+      ) : null}
 
       {createdCredentials ? (
         <section
@@ -766,16 +856,18 @@ export function CoordinatorAccountsPage() {
               </div>
               <div className="dashboard-metric-cell">
                 <dt className="text-xs font-medium text-ink-muted">
-                  Coordinators
+                  Deactivated Accounts
                 </dt>
                 <dd className="text-xl font-semibold tabular-nums text-ink">
-                  {derived.counts.coordinators}
+                  {derived.counts.deactivated}
                 </dd>
-                <dd className="text-xs text-ink-muted">Program administrators</dd>
+                <dd className="text-xs text-ink-muted">
+                  Access revoked, records archived
+                </dd>
               </div>
               <div className="dashboard-metric-cell">
                 <dt className="text-xs font-medium text-ink-muted">
-                  Interns without supervisor
+                  Unassigned Active Interns
                 </dt>
                 <dd
                   className={`text-xl font-semibold tabular-nums ${
@@ -788,8 +880,8 @@ export function CoordinatorAccountsPage() {
                 </dd>
                 <dd className="text-xs text-ink-muted">
                   {derived.counts.unassignedInterns === 0
-                    ? 'All interns assigned'
-                    : 'Require assignment'}
+                    ? 'All active interns assigned'
+                    : 'Require supervisor assignment'}
                 </dd>
               </div>
             </dl>
@@ -816,7 +908,7 @@ export function CoordinatorAccountsPage() {
 
             <search
               aria-label="Filter portal accounts"
-              className="grid grid-cols-1 gap-3 border-b border-rule bg-surface px-5 py-3.5 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_14rem]"
+              className="grid grid-cols-1 gap-3 border-b border-rule bg-surface px-5 py-3.5 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_13rem_12rem]"
             >
               <div className="flex flex-col gap-1">
                 <label
@@ -830,7 +922,7 @@ export function CoordinatorAccountsPage() {
                   type="search"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Name, student ID, company, course, or supervisor…"
+                  placeholder="Name, email, student ID, company, course, or supervisor…"
                   className="min-h-10 w-full rounded-[5px] border border-input-border bg-surface px-3 text-sm text-ink placeholder:text-ink-muted/70 hover:border-ink"
                 />
               </div>
@@ -858,13 +950,31 @@ export function CoordinatorAccountsPage() {
                   ) : null}
                 </select>
               </div>
+              <div className="flex flex-col gap-1">
+                <label
+                  htmlFor="accounts-status-filter"
+                  className="text-xs font-medium text-ink-muted"
+                >
+                  Status
+                </label>
+                <select
+                  id="accounts-status-filter"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="min-h-10 w-full rounded-[5px] border border-input-border bg-surface px-3 text-sm text-ink hover:border-ink"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="active">Active</option>
+                  <option value="deactivated">Deactivated</option>
+                </select>
+              </div>
             </search>
 
             {visibleAccounts.length === 0 ? (
               <div className="px-5 py-10 text-sm text-ink-muted">
                 {derived.accounts.length === 0
                   ? 'No accounts found yet.'
-                  : 'No accounts match the current search or role filter.'}
+                  : 'No accounts match the current search or filters.'}
               </div>
             ) : (
               <div
@@ -873,36 +983,43 @@ export function CoordinatorAccountsPage() {
                 aria-labelledby="accounts-heading"
                 className="table-wrapper"
               >
-                <table className="submission-table">
+                <table className="submission-table is-compact">
                   <caption className="visually-hidden">
                     Registered portal accounts ordered by role and name
                   </caption>
                   <thead>
                     <tr>
                       <th scope="col">Name</th>
-                      <th scope="col" className="w-32">
+                      <th scope="col" className="w-28">
                         Role
                       </th>
-                      <th scope="col" className="w-36">
-                        Student ID
-                      </th>
-                      <th scope="col" className="w-44">
-                        Company
-                      </th>
-                      <th scope="col" className="w-44">
-                        Supervisor
+                      <th scope="col" className="w-28">
+                        Status
                       </th>
                       <th scope="col" className="w-32">
-                        Required hours
+                        Student ID
                       </th>
-                      <th scope="col" className="w-36">
+                      <th scope="col" className="w-40">
+                        Company
+                      </th>
+                      <th scope="col" className="w-40">
+                        Supervisor
+                      </th>
+                      <th scope="col" className="w-28">
+                        Required
+                      </th>
+                      <th scope="col" className="w-32">
                         Start date
+                      </th>
+                      <th scope="col" className="col-action w-28">
+                        Actions
                       </th>
                     </tr>
                   </thead>
                   <tbody>
                     {visibleAccounts.map((account) => {
                       const isIntern = account.role === 'intern'
+                      const isActive = account.is_active !== false
                       const supervisorName =
                         isIntern && account.supervisor_id
                           ? (derived.profileById.get(account.supervisor_id)
@@ -915,28 +1032,44 @@ export function CoordinatorAccountsPage() {
                         : ''
 
                       return (
-                        <tr key={account.id}>
-                          <td data-label="Name">
+                        <tr
+                          key={account.id}
+                          className={!isActive ? 'opacity-75' : undefined}
+                        >
+                          <th scope="row">
                             <div className="min-w-0">
                               <p className="font-medium text-ink">
                                 {account.full_name}
+                                {account.is_self ? (
+                                  <span className="ms-1.5 text-[11px] font-normal text-ink-muted">
+                                    (You)
+                                  </span>
+                                ) : null}
                               </p>
+                              {account.email ? (
+                                <p className="mt-0.5 truncate text-xs font-normal text-ink-muted">
+                                  {account.email}
+                                </p>
+                              ) : null}
                               {academicMeta ? (
-                                <p className="mt-0.5 text-xs text-ink-muted">
+                                <p className="mt-0.5 text-xs font-normal text-ink-muted">
                                   {academicMeta}
                                 </p>
                               ) : null}
                             </div>
-                          </td>
+                          </th>
                           <td
                             data-label="Role"
                             className="whitespace-nowrap text-xs font-medium text-ink-muted"
                           >
                             {ROLE_LABELS[account.role] ?? account.role}
                           </td>
+                          <td data-label="Status">
+                            <AccountStatusBadge isActive={isActive} />
+                          </td>
                           <td
                             data-label="Student ID"
-                            className="whitespace-nowrap text-sm tabular-nums text-ink-muted"
+                            className="whitespace-nowrap text-xs tabular-nums text-ink-muted"
                           >
                             {isIntern && account.student_id_no
                               ? account.student_id_no
@@ -944,19 +1077,19 @@ export function CoordinatorAccountsPage() {
                           </td>
                           <td
                             data-label="Company"
-                            className="text-sm text-ink-muted"
+                            className="text-xs text-ink-muted"
                           >
                             {account.company_name || '—'}
                           </td>
                           <td
                             data-label="Supervisor"
-                            className="text-sm text-ink-muted"
+                            className="text-xs text-ink-muted"
                           >
                             {supervisorName}
                           </td>
                           <td
-                            data-label="Required hours"
-                            className="whitespace-nowrap text-sm tabular-nums text-ink-muted"
+                            data-label="Required"
+                            className="whitespace-nowrap text-xs tabular-nums text-ink-muted"
                           >
                             {isIntern && account.required_hours
                               ? `${account.required_hours} hrs`
@@ -964,7 +1097,7 @@ export function CoordinatorAccountsPage() {
                           </td>
                           <td
                             data-label="Start date"
-                            className="whitespace-nowrap text-sm tabular-nums text-ink-muted"
+                            className="whitespace-nowrap text-xs tabular-nums text-ink-muted"
                           >
                             {isIntern && account.internship_start_date ? (
                               <time dateTime={account.internship_start_date}>
@@ -975,6 +1108,132 @@ export function CoordinatorAccountsPage() {
                             ) : (
                               '—'
                             )}
+                          </td>
+                          <td data-label="Actions" className="col-action">
+                            <AccountActionMenu
+                              account={account}
+                              onView={(acct) => setViewTarget(acct)}
+                              onEdit={(acct) => setEditTarget(acct)}
+                              onDeactivate={(acct) => setDeactivateTarget(acct)}
+                              onReactivate={(acct) => setReactivateTarget(acct)}
+                              onDelete={(acct) => setDeleteTarget(acct)}
+                            />
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          {/* Account Audit Trail */}
+          <section
+            aria-labelledby="audit-log-heading"
+            className="overflow-hidden rounded-[6px] border border-rule bg-surface"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rule bg-surface-subtle px-5 py-3.5">
+              <div>
+                <h2
+                  id="audit-log-heading"
+                  className="text-sm font-semibold text-ink"
+                >
+                  Account Management Audit Trail
+                </h2>
+                <p className="mt-0.5 text-xs text-ink-muted">
+                  Permanent record of account creations, edits, deactivations,
+                  reactivations, and deletions
+                </p>
+              </div>
+              <span className="text-xs tabular-nums text-ink-muted">
+                {derived.auditLogs.length}{' '}
+                {derived.auditLogs.length === 1 ? 'entry' : 'entries'}
+              </span>
+            </div>
+
+            {derived.auditLogs.length === 0 ? (
+              <div className="px-5 py-8 text-xs text-ink-muted">
+                No account management actions have been logged yet.
+              </div>
+            ) : (
+              <div
+                tabIndex={0}
+                role="region"
+                aria-labelledby="audit-log-heading"
+                className="table-wrapper"
+              >
+                <table className="submission-table is-compact">
+                  <caption className="visually-hidden">
+                    Audit history of coordinator account management actions
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" className="w-32">
+                        Action
+                      </th>
+                      <th scope="col">Target Account</th>
+                      <th scope="col" className="w-28">
+                        Role
+                      </th>
+                      <th scope="col" className="w-40">
+                        Performed By
+                      </th>
+                      <th scope="col">Reason</th>
+                      <th scope="col" className="w-40">
+                        Date &amp; Time
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {derived.auditLogs.map((log) => {
+                      const badge =
+                        AUDIT_ACTION_META[log.action] ??
+                        AUDIT_ACTION_META.updated
+                      return (
+                        <tr key={log.id}>
+                          <td data-label="Action">
+                            <span
+                              className={`inline-flex items-center rounded-[5px] border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${badge.className}`}
+                            >
+                              {badge.label}
+                            </span>
+                          </td>
+                          <th scope="row">
+                            <div className="min-w-0">
+                              <p className="text-xs font-medium text-ink">
+                                {log.target_name}
+                              </p>
+                              {log.target_email ? (
+                                <p className="mt-0.5 text-[11px] font-normal text-ink-muted">
+                                  {log.target_email}
+                                </p>
+                              ) : null}
+                            </div>
+                          </th>
+                          <td
+                            data-label="Role"
+                            className="whitespace-nowrap text-xs text-ink-muted"
+                          >
+                            {ROLE_LABELS[log.target_role] ?? log.target_role}
+                          </td>
+                          <td
+                            data-label="Performed By"
+                            className="text-xs text-ink-muted"
+                          >
+                            {log.performed_by_name}
+                          </td>
+                          <td
+                            data-label="Reason"
+                            className="text-xs text-ink-muted"
+                          >
+                            {log.reason || '—'}
+                          </td>
+                          <td
+                            data-label="Date & Time"
+                            className="whitespace-nowrap text-xs tabular-nums text-ink-muted"
+                          >
+                            {formatAuditTimestamp(log.created_at)}
                           </td>
                         </tr>
                       )
@@ -995,13 +1254,54 @@ export function CoordinatorAccountsPage() {
       >
         {dialogOpen ? (
           <CreateAccountForm
-            supervisors={derived.supervisors}
-            supervisorById={derived.supervisorById}
+            supervisors={derived.activeSupervisors}
+            supervisorById={derived.activeSupervisorById}
             onClose={closeDialog}
             onCreated={handleCreated}
           />
         ) : null}
       </SubmissionDialog>
+
+      <ViewAccountDialog
+        account={viewTarget}
+        supervisorName={
+          viewTarget?.supervisor_id
+            ? (derived.profileById.get(viewTarget.supervisor_id)?.full_name ??
+              '—')
+            : '—'
+        }
+        onClose={() => setViewTarget(null)}
+        onEdit={(acct) => setEditTarget(acct)}
+        onDeactivate={(acct) => setDeactivateTarget(acct)}
+        onReactivate={(acct) => setReactivateTarget(acct)}
+        onDelete={(acct) => setDeleteTarget(acct)}
+      />
+
+      <EditAccountDialog
+        account={editTarget}
+        supervisors={derived.supervisors}
+        onClose={() => setEditTarget(null)}
+        onSaved={handleLifecycleSuccess}
+      />
+
+      <DeactivateAccountDialog
+        account={deactivateTarget}
+        onClose={() => setDeactivateTarget(null)}
+        onCompleted={handleLifecycleSuccess}
+      />
+
+      <ReactivateAccountDialog
+        account={reactivateTarget}
+        onClose={() => setReactivateTarget(null)}
+        onCompleted={handleLifecycleSuccess}
+      />
+
+      <DeleteAccountDialog
+        account={deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onSwitchToDeactivate={(acct) => setDeactivateTarget(acct)}
+        onDeleted={handleLifecycleSuccess}
+      />
     </div>
   )
 }

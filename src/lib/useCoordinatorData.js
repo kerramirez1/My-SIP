@@ -868,10 +868,12 @@ export function buildCoordinatorMonitoringData({
     const supervisorName = resolveSupervisorNameForIntern(intern)
     const internSubmissions = submissionsByIntern.get(intern.id) ?? []
 
+    const isAccountActive = intern.is_active !== false
+
     // Inactivity check: only for active started interns who haven't met required hours
     let daysSinceActivity = null
     let isInactive = false
-    if (hasStarted && !isComplete) {
+    if (isAccountActive && hasStarted && !isComplete) {
       const referenceIso = lastSubmissionDate || intern.internship_start_date
       if (referenceIso) {
         const diff = getCalendarDayDiff(referenceIso, todayIso)
@@ -999,7 +1001,7 @@ export function buildCoordinatorMonitoringData({
       })
     }
 
-    if (hasStarted && !isComplete && !hasAttendanceThisWeek) {
+    if (isAccountActive && hasStarted && !isComplete && !hasAttendanceThisWeek) {
       internAlerts.push({
         id: `missing-attendance-${intern.id}`,
         internId: intern.id,
@@ -1019,7 +1021,12 @@ export function buildCoordinatorMonitoringData({
       })
     }
 
-    if (hasStarted && !isComplete && !hasAccomplishmentThisWeek) {
+    if (
+      isAccountActive &&
+      hasStarted &&
+      !isComplete &&
+      !hasAccomplishmentThisWeek
+    ) {
       internAlerts.push({
         id: `missing-accomplishment-${intern.id}`,
         internId: intern.id,
@@ -1619,7 +1626,7 @@ export function useCoordinatorData(filters = {}) {
       supabase
         .from('profiles')
         .select(
-          'id, full_name, role, supervisor_id, student_id_no, company_name, school_name, course, required_hours, internship_start_date, created_at',
+          'id, full_name, role, supervisor_id, student_id_no, company_name, school_name, course, required_hours, internship_start_date, is_active, created_at',
         )
         .order('full_name', { ascending: true }),
       supabase

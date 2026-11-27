@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { AlertMessage } from '../../components/AlertMessage'
 import { FormField } from '../../components/FormField'
-import { PaperclipIcon } from '../../components/Icons'
+import { CloseIcon, PaperclipIcon } from '../../components/Icons'
+import { StatusBadge } from '../../components/StatusBadge'
 import { SubmissionDialog } from '../../components/SubmissionDialog'
 import {
   formatDecimalHours,
@@ -14,6 +15,11 @@ import {
   splitFilenameForDisplay,
 } from '../../lib/submissionHelpers'
 import { supabase } from '../../lib/supabaseClient'
+import {
+  closeModalDialogAnimated,
+  isPointerOutsideDialog,
+  supportsDialogClosedBy,
+} from '../../lib/topLayerDialog'
 import { useFormValidationSync } from '../../lib/useFormValidationSync'
 import { extractIsoDatePart, formatBreakText } from '../../lib/useSupervisorData'
 import {
@@ -180,25 +186,147 @@ export function AttachmentControl({ objectPath, onError }) {
   )
 }
 
+const DRAWER_TITLES = {
+  accomplishments: 'Weekly Accomplishment Review',
+  attendance: 'Weekly Attendance Review',
+  tasks: 'Task Submission Review',
+}
+
+function formatTimestampDisplay(isoTimestamp) {
+  const datePart = extractIsoDatePart(isoTimestamp)
+  if (!datePart) return '—'
+  const dateLabel = formatCalendarDate(datePart)
+  const parsed = new Date(isoTimestamp)
+  if (Number.isNaN(parsed.getTime())) return dateLabel
+  const timeLabel = new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(parsed)
+  return `${dateLabel} · ${timeLabel}`
+}
+
+function buildSubmissionHistory(item) {
+  if (!item?.row) return []
+
+  const entries = []
+  const { row, type, internName } = item
+
+  if (type === 'tasks') {
+    if (row.created_at) {
+      entries.push({
+        id: 'assigned',
+        title: 'Task assigned',
+        timestamp: row.created_at,
+        detail: 'Task created and assigned in the internship queue.',
+      })
+    }
+    if (row.submitted_at) {
+      entries.push({
+        id: 'submitted',
+        title: `Submitted by ${internName}`,
+        timestamp: row.submitted_at,
+        detail: 'Task completion submitted for supervisor review.',
+      })
+    }
+  } else {
+    entries.push({
+      id: 'submitted',
+      title: `Submitted by ${internName}`,
+      timestamp: row.created_at,
+      detail:
+        type === 'accomplishments'
+          ? `Weekly accomplishment submitted for ${formatWeekRange(row.week_of)}.`
+          : `Attendance log submitted for ${formatCalendarDate(row.attendance_date)}.`,
+    })
+  }
+
+  const baseTimestamp = type === 'tasks' ? row.submitted_at : row.created_at
+  const baseMs = baseTimestamp ? Date.parse(baseTimestamp) : Number.NaN
+  const updatedMs = row.updated_at ? Date.parse(row.updated_at) : Number.NaN
+  if (
+    Number.isFinite(baseMs) &&
+    Number.isFinite(updatedMs) &&
+    updatedMs - baseMs > 60_000
+  ) {
+    entries.push({
+      id: 'updated',
+      title: 'Submission updated',
+      timestamp: row.updated_at,
+      detail: 'Intern updated submission details prior to review.',
+    })
+  }
+
+  if (row.reviewed_at) {
+    entries.push({
+      id: 'previous-review',
+      title: 'Previous review record',
+      timestamp: row.reviewed_at,
+      detail: row.reviewer_remarks
+        ? `Remarks: "${row.reviewer_remarks}"`
+        : 'Previous review activity recorded.',
+    })
+  }
+
+  entries.push({
+    id: 'current-status',
+    title: 'Pending Supervisor Review',
+    timestamp: null,
+    detail: 'Awaiting approve, return for revision, or reject decision.',
+    isCurrent: true,
+  })
+
+  return entries
+}
+
+function DrawerNarrativeField({ label, value, emptyText = 'None provided.' }) {
+  return (
+    <div className="space-y-1">
+      <h4 className="text-xs font-semibold uppercase tracking-[0.04em] text-ink-muted">
+        {label}
+      </h4>
+      {value ? (
+        <p className="whitespace-pre-line text-sm leading-[1.6] text-ink break-words">
+          {value}
+        </p>
+      ) : (
+        <p className="text-sm italic text-ink-muted">{emptyText}</p>
+      )}
+    </div>
+  )
+}
+
 function ReviewDialogBody({
   item,
+  intern,
   supervisorId,
   todayIso,
-  onClose,
+  headingId,
+  descId,
+  onRequestClose,
   onReviewed,
   onAttachmentError,
+  onSubmittingChange,
 }) {
   const [reviewRemarks, setReviewRemarks] = useState('')
   const [reviewError, setReviewError] = useState('')
   const [submittingDecision, setSubmittingDecision] = useState(null)
   const reviewFormRef = useRef(null)
   const remarksInputRef = useRef(null)
+  const scrollBodyRef = useRef(null)
+  const drawerHeadingRef = useRef(null)
 
   useFormValidationSync(reviewFormRef)
 
   useEffect(() => {
+    onSubmittingChange?.(Boolean(submittingDecision))
+  }, [submittingDecision, onSubmittingChange])
+
+  useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
-      remarksInputRef.current?.focus()
+      if (scrollBodyRef.current) {
+        scrollBodyRef.current.scrollTop = 0
+      }
+      drawerHeadingRef.current?.focus({ preventScroll: true })
     })
     return () => window.cancelAnimationFrame(frameId)
   }, [])
@@ -255,269 +383,511 @@ function ReviewDialogBody({
     const successMessage = `${item.typeLabel} ${decisionWord} for ${item.internName}.`
 
     setSubmittingDecision(null)
+    onSubmittingChange?.(false)
     onReviewed?.(successMessage)
-    onClose?.()
+    onRequestClose?.()
   }
 
+  const historyEntries = buildSubmissionHistory(item)
+  const drawerTitle = DRAWER_TITLES[item.type] ?? 'Submission Review'
+  const submissionTimestamp =
+    item.type === 'tasks'
+      ? item.row.submitted_at || item.row.created_at
+      : item.row.created_at
+  const internProgram =
+    [intern?.course, intern?.school_name].filter(Boolean).join(' · ') || '—'
+
   return (
-    <div>
-      <div className="rounded-[5px] border border-rule bg-surface-subtle px-4 py-3 text-xs">
-        {item.type === 'attendance' ? (
-          <dl className="space-y-2">
-            <div className="flex flex-wrap justify-between gap-2">
-              <dt className="text-ink-muted">Date</dt>
-              <dd className="font-medium tabular-nums text-ink">
-                {formatCalendarDate(item.row.attendance_date)}
+    <div className="flex h-full min-h-0 flex-col bg-surface">
+      <header className="flex shrink-0 items-start justify-between gap-4 border-b border-rule bg-surface px-5 py-4 sm:px-6">
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center rounded-[5px] border border-rule bg-surface-subtle px-2 py-0.5 text-xs font-medium text-ink-muted">
+              {item.typeLabel}
+            </span>
+            <StatusBadge status={item.row.status} />
+          </div>
+          <h2
+            id={headingId}
+            ref={drawerHeadingRef}
+            tabIndex={-1}
+            className="text-base font-semibold tracking-[-0.01em] text-ink outline-none"
+          >
+            {drawerTitle}
+          </h2>
+          <p id={descId} className="text-xs text-ink-muted">
+            {intern?.full_name || item.internName}
+            {intern?.student_id_no ? ` · ${intern.student_id_no}` : ''}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          disabled={Boolean(submittingDecision)}
+          onClick={onRequestClose}
+          aria-label="Close review drawer"
+          className="inline-flex size-9 shrink-0 items-center justify-center rounded-[5px] border border-rule bg-surface text-ink-muted hover:bg-surface-subtle hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <CloseIcon className="size-4" />
+        </button>
+      </header>
+
+      <div
+        ref={scrollBodyRef}
+        className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-6"
+      >
+        <section
+          aria-labelledby={`${headingId}-intern`}
+          className="rounded-[6px] border border-rule bg-surface-subtle/70 p-4"
+        >
+          <h3
+            id={`${headingId}-intern`}
+            className="text-xs font-semibold uppercase tracking-[0.04em] text-ink-muted"
+          >
+            Intern Information
+          </h3>
+          <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2.5 text-xs sm:grid-cols-2">
+            <div>
+              <dt className="text-ink-muted">Intern Name</dt>
+              <dd className="mt-0.5 font-medium text-ink">
+                {intern?.full_name || item.internName}
               </dd>
             </div>
-            <div className="flex flex-wrap justify-between gap-2">
-              <dt className="text-ink-muted">Week</dt>
-              <dd className="tabular-nums text-ink">
-                {formatWeekRange(item.row.week_of, 5)}
+            <div>
+              <dt className="text-ink-muted">Student ID</dt>
+              <dd className="mt-0.5 font-medium tabular-nums text-ink">
+                {intern?.student_id_no || '—'}
               </dd>
             </div>
-            <div className="flex flex-wrap justify-between gap-2">
-              <dt className="text-ink-muted">Time in / Time out</dt>
-              <dd className="font-medium tabular-nums text-ink">
-                {formatWallClockTime(item.row.time_in)} –{' '}
-                {formatWallClockTime(item.row.time_out)}
-              </dd>
+            <div>
+              <dt className="text-ink-muted">Host Company</dt>
+              <dd className="mt-0.5 text-ink">{intern?.company_name || '—'}</dd>
             </div>
-            <div className="flex flex-wrap justify-between gap-2">
-              <dt className="text-ink-muted">Lunch break</dt>
-              <dd className="tabular-nums text-ink">
-                {formatBreakText(item.row.break_minutes)}
-              </dd>
-            </div>
-            <div className="flex flex-wrap justify-between gap-2 border-t border-rule pt-2">
-              <dt className="font-medium text-ink">Rendered hours</dt>
-              <dd className="font-semibold tabular-nums text-ink">
-                {item.renderedMinutes !== null
-                  ? `${formatDurationMinutes(item.renderedMinutes)} (${formatDecimalHours(item.renderedMinutes)})`
-                  : '—'}
-              </dd>
+            <div>
+              <dt className="text-ink-muted">Program / School</dt>
+              <dd className="mt-0.5 text-ink">{internProgram}</dd>
             </div>
           </dl>
-        ) : item.type === 'accomplishments' ? (
-          <div className="space-y-2.5">
-            <div>
-              <p className="text-sm font-semibold text-ink">{item.row.title}</p>
-              <p className="mt-0.5 tabular-nums text-ink-muted">
-                Week of {formatWeekRange(item.row.week_of)}
-              </p>
-            </div>
-            {item.row.description ? (
-              <div>
-                <p className="font-medium text-ink-muted">
-                  Activities performed
-                </p>
-                <p className="mt-0.5 whitespace-pre-line text-ink break-words">
-                  {item.row.description}
-                </p>
-              </div>
-            ) : null}
-            {item.row.skills_acquired ? (
-              <div>
-                <p className="font-medium text-ink-muted">Skills acquired</p>
-                <p className="mt-0.5 whitespace-pre-line text-ink break-words">
-                  {item.row.skills_acquired}
-                </p>
-              </div>
-            ) : null}
-            {item.row.challenges_encountered ? (
-              <div>
-                <p className="font-medium text-ink-muted">
-                  Challenges encountered
-                </p>
-                <p className="mt-0.5 whitespace-pre-line text-ink break-words">
-                  {item.row.challenges_encountered}
-                </p>
-              </div>
-            ) : null}
-            {item.row.lessons_learned ? (
-              <div>
-                <p className="font-medium text-ink-muted">Lessons learned</p>
-                <p className="mt-0.5 whitespace-pre-line text-ink break-words">
-                  {item.row.lessons_learned}
-                </p>
-              </div>
-            ) : null}
-            <AttachmentControl
-              objectPath={item.row.attachment_url}
-              onError={onAttachmentError}
-            />
-          </div>
-        ) : (
-          <div className="space-y-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm font-semibold text-ink">{item.row.title}</p>
-              <PriorityBadge priority={item.row.priority} />
-            </div>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 tabular-nums text-ink-muted">
-              <span>
-                Deadline:{' '}
-                <span className="font-medium text-ink">
-                  {formatCalendarDate(item.row.deadline || item.row.task_date)}
-                </span>
-              </span>
-              {item.row.deadline || item.row.task_date ? (
-                <span
-                  className={
-                    DEADLINE_TONE_CLASSES[
-                      getDeadlineBadge(
-                        item.row.deadline || item.row.task_date,
-                        todayIso,
-                      ).tone
-                    ]
-                  }
+        </section>
+
+        {item.type === 'accomplishments' ? (
+          <>
+            <section
+              aria-labelledby={`${headingId}-report`}
+              className="space-y-4 rounded-[6px] border border-rule bg-surface p-4 sm:p-5"
+            >
+              <div className="border-b border-rule pb-3.5">
+                <h3
+                  id={`${headingId}-report`}
+                  className="text-sm font-semibold text-ink break-words"
                 >
-                  (
-                  {
-                    getDeadlineBadge(
-                      item.row.deadline || item.row.task_date,
-                      todayIso,
-                    ).label
-                  }
-                  )
-                </span>
-              ) : null}
-              {item.row.submitted_at ? (
-                <span>
-                  Submitted on{' '}
-                  {formatCalendarDate(extractIsoDatePart(item.row.submitted_at))}
-                </span>
-              ) : null}
+                  {item.row.title || 'Weekly Accomplishment Report'}
+                </h3>
+                <dl className="mt-3 grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
+                  <div>
+                    <dt className="text-ink-muted">Reporting Period</dt>
+                    <dd className="mt-0.5 font-medium tabular-nums text-ink">
+                      Week of {formatWeekRange(item.row.week_of)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-ink-muted">Submission Date</dt>
+                    <dd className="mt-0.5 font-medium tabular-nums text-ink">
+                      {formatTimestampDisplay(submissionTimestamp)}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+
+              <div className="space-y-4">
+                <DrawerNarrativeField
+                  label="Activities Performed"
+                  value={item.row.description}
+                  emptyText="No activities recorded."
+                />
+                <DrawerNarrativeField
+                  label="Skills Acquired"
+                  value={item.row.skills_acquired}
+                  emptyText="No skills recorded."
+                />
+                <DrawerNarrativeField
+                  label="Challenges Encountered"
+                  value={item.row.challenges_encountered}
+                  emptyText="No challenges recorded."
+                />
+                <DrawerNarrativeField
+                  label="Lessons Learned"
+                  value={item.row.lessons_learned}
+                  emptyText="No lessons recorded."
+                />
+              </div>
+
+              <div className="border-t border-rule pt-3.5">
+                <h4 className="text-xs font-semibold uppercase tracking-[0.04em] text-ink-muted">
+                  Uploaded Attachments
+                </h4>
+                {item.row.attachment_url ? (
+                  <AttachmentControl
+                    objectPath={item.row.attachment_url}
+                    onError={onAttachmentError}
+                  />
+                ) : (
+                  <p className="mt-1.5 text-xs italic text-ink-muted">
+                    No attachment uploaded.
+                  </p>
+                )}
+              </div>
+            </section>
+          </>
+        ) : item.type === 'attendance' ? (
+          <section
+            aria-labelledby={`${headingId}-attendance`}
+            className="rounded-[6px] border border-rule bg-surface p-4 sm:p-5 text-xs"
+          >
+            <h3
+              id={`${headingId}-attendance`}
+              className="text-xs font-semibold uppercase tracking-[0.04em] text-ink-muted"
+            >
+              Attendance Log Details
+            </h3>
+            <dl className="mt-3 space-y-2.5">
+              <div className="flex flex-wrap justify-between gap-2">
+                <dt className="text-ink-muted">Attendance Date</dt>
+                <dd className="font-medium tabular-nums text-ink">
+                  {formatCalendarDate(item.row.attendance_date)}
+                </dd>
+              </div>
+              <div className="flex flex-wrap justify-between gap-2">
+                <dt className="text-ink-muted">Reporting Period</dt>
+                <dd className="tabular-nums text-ink">
+                  {formatWeekRange(item.row.week_of, 5)}
+                </dd>
+              </div>
+              <div className="flex flex-wrap justify-between gap-2">
+                <dt className="text-ink-muted">Time In / Time Out</dt>
+                <dd className="font-medium tabular-nums text-ink">
+                  {formatWallClockTime(item.row.time_in)} –{' '}
+                  {formatWallClockTime(item.row.time_out)}
+                </dd>
+              </div>
+              <div className="flex flex-wrap justify-between gap-2">
+                <dt className="text-ink-muted">Lunch Break</dt>
+                <dd className="tabular-nums text-ink">
+                  {formatBreakText(item.row.break_minutes)}
+                </dd>
+              </div>
+              <div className="flex flex-wrap justify-between gap-2">
+                <dt className="text-ink-muted">Submission Date</dt>
+                <dd className="tabular-nums text-ink">
+                  {formatTimestampDisplay(submissionTimestamp)}
+                </dd>
+              </div>
+              <div className="flex flex-wrap justify-between gap-2 border-t border-rule pt-2.5">
+                <dt className="font-medium text-ink">Rendered Hours</dt>
+                <dd className="font-semibold tabular-nums text-ink">
+                  {item.renderedMinutes !== null
+                    ? `${formatDurationMinutes(item.renderedMinutes)} (${formatDecimalHours(item.renderedMinutes)})`
+                    : '—'}
+                </dd>
+              </div>
+            </dl>
+          </section>
+        ) : (
+          <section
+            aria-labelledby={`${headingId}-task`}
+            className="space-y-4 rounded-[6px] border border-rule bg-surface p-4 sm:p-5"
+          >
+            <div className="border-b border-rule pb-3.5">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <h3
+                  id={`${headingId}-task`}
+                  className="text-sm font-semibold text-ink break-words"
+                >
+                  {item.row.title}
+                </h3>
+                <PriorityBadge priority={item.row.priority} />
+              </div>
+              <dl className="mt-3 grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
+                <div>
+                  <dt className="text-ink-muted">Deadline</dt>
+                  <dd className="mt-0.5 flex flex-wrap items-center gap-1.5 tabular-nums">
+                    <span className="font-medium text-ink">
+                      {formatCalendarDate(item.row.deadline || item.row.task_date)}
+                    </span>
+                    {item.row.deadline || item.row.task_date ? (
+                      <span
+                        className={
+                          DEADLINE_TONE_CLASSES[
+                            getDeadlineBadge(
+                              item.row.deadline || item.row.task_date,
+                              todayIso,
+                            ).tone
+                          ]
+                        }
+                      >
+                        (
+                        {
+                          getDeadlineBadge(
+                            item.row.deadline || item.row.task_date,
+                            todayIso,
+                          ).label
+                        }
+                        )
+                      </span>
+                    ) : null}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-ink-muted">Submission Date</dt>
+                  <dd className="mt-0.5 font-medium tabular-nums text-ink">
+                    {formatTimestampDisplay(submissionTimestamp)}
+                  </dd>
+                </div>
+              </dl>
             </div>
-            {item.row.description ? (
-              <div>
-                <p className="font-medium text-ink-muted">Instructions</p>
-                <p className="mt-0.5 whitespace-pre-line text-ink break-words">
-                  {item.row.description}
+
+            <div className="space-y-4">
+              <DrawerNarrativeField
+                label="Task Instructions"
+                value={item.row.description}
+                emptyText="No instructions recorded."
+              />
+              <DrawerNarrativeField
+                label="Intern Completion Notes"
+                value={item.row.completion_description}
+                emptyText="No completion notes recorded."
+              />
+            </div>
+
+            <div className="border-t border-rule pt-3.5">
+              <h4 className="text-xs font-semibold uppercase tracking-[0.04em] text-ink-muted">
+                Uploaded Attachments
+              </h4>
+              {item.row.submission_attachment_url ? (
+                <AttachmentControl
+                  objectPath={item.row.submission_attachment_url}
+                  onError={onAttachmentError}
+                />
+              ) : (
+                <p className="mt-1.5 text-xs italic text-ink-muted">
+                  No attachment uploaded.
                 </p>
-              </div>
-            ) : null}
-            {item.row.completion_description ? (
-              <div className="border-t border-rule pt-2">
-                <p className="font-medium text-ink-muted">
-                  Intern completion notes
-                </p>
-                <p className="mt-0.5 whitespace-pre-line text-ink break-words">
-                  {item.row.completion_description}
-                </p>
-              </div>
-            ) : null}
-            <AttachmentControl
-              objectPath={item.row.submission_attachment_url}
-              onError={onAttachmentError}
-            />
-          </div>
+              )}
+            </div>
+          </section>
         )}
+
+        <section
+          aria-labelledby={`${headingId}-history`}
+          className="rounded-[6px] border border-rule bg-surface p-4"
+        >
+          <h3
+            id={`${headingId}-history`}
+            className="text-xs font-semibold uppercase tracking-[0.04em] text-ink-muted"
+          >
+            Submission History
+          </h3>
+          <ol className="mt-3 space-y-3 border-s border-rule ps-4">
+            {historyEntries.map((entry) => (
+              <li key={entry.id} className="relative text-xs">
+                <span
+                  aria-hidden="true"
+                  className={`absolute -start-[1.3125rem] top-1 size-2 rounded-full border ${
+                    entry.isCurrent
+                      ? 'border-accent bg-accent-solid'
+                      : 'border-rule bg-surface'
+                  }`}
+                />
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="font-medium text-ink">{entry.title}</p>
+                  {entry.timestamp ? (
+                    <time
+                      dateTime={entry.timestamp}
+                      className="tabular-nums text-ink-muted"
+                    >
+                      {formatTimestampDisplay(entry.timestamp)}
+                    </time>
+                  ) : null}
+                </div>
+                <p className="mt-0.5 text-ink-muted">{entry.detail}</p>
+              </li>
+            ))}
+          </ol>
+        </section>
       </div>
 
-      <div className={reviewError ? 'mt-4' : ''}>
-        <AlertMessage message={reviewError} variant="error" />
-      </div>
+      <footer className="shrink-0 border-t border-rule bg-surface-subtle/60 px-5 py-4 sm:px-6">
+        {reviewError ? (
+          <div className="mb-3">
+            <AlertMessage message={reviewError} variant="error" />
+          </div>
+        ) : null}
 
-      <form
-        ref={reviewFormRef}
-        aria-label="Review decision"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void handleReviewDecision('approved')
-        }}
-        noValidate
-        className="mt-4 space-y-4"
-      >
-        <FormField
-          inputRef={remarksInputRef}
-          id="supervisor-review-remarks"
-          name="reviewer_remarks"
-          label="Remarks"
-          multiline
-          rows={3}
-          hint="Optional for Approve. Required for Return for Revision or Reject."
-          placeholder="Add feedback or instructions for the intern."
-          validationMessage="Remarks are required when returning or rejecting a submission."
-          value={reviewRemarks}
-          onChange={(event) => {
-            setReviewRemarks(event.target.value)
-            setFieldInvalidFallback(remarksInputRef.current, false)
-            if (reviewError) setReviewError('')
+        <form
+          ref={reviewFormRef}
+          aria-label="Review decision"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void handleReviewDecision('approved')
           }}
-        />
+          noValidate
+          className="space-y-3"
+        >
+          <FormField
+            inputRef={remarksInputRef}
+            id="supervisor-review-remarks"
+            name="reviewer_remarks"
+            label="Supervisor Remarks"
+            multiline
+            rows={2}
+            hint="Optional for Approve. Required for Return for Revision or Reject."
+            placeholder="Add feedback or revision instructions for the intern."
+            validationMessage="Remarks are required when returning or rejecting a submission."
+            value={reviewRemarks}
+            onChange={(event) => {
+              setReviewRemarks(event.target.value)
+              setFieldInvalidFallback(remarksInputRef.current, false)
+              if (reviewError) setReviewError('')
+            }}
+          />
 
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-rule pt-4">
-          <button
-            type="button"
-            disabled={Boolean(submittingDecision)}
-            onClick={onClose}
-            className="inline-flex min-h-10 items-center justify-center rounded-[5px] border border-rule bg-surface px-3.5 text-sm font-medium text-ink hover:bg-surface-subtle disabled:opacity-60"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={Boolean(submittingDecision)}
-            onClick={() => void handleReviewDecision('rejected')}
-            className="inline-flex min-h-10 items-center justify-center rounded-[5px] border border-rejected-border bg-rejected-bg px-3.5 text-sm font-medium text-on-accent hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {submittingDecision === 'rejected' ? 'Rejecting…' : 'Reject'}
-          </button>
-          <button
-            type="button"
-            disabled={Boolean(submittingDecision)}
-            onClick={() => void handleReviewDecision('returned')}
-            className="inline-flex min-h-10 items-center justify-center rounded-[5px] border border-error-border/60 bg-error-tint px-3.5 text-sm font-medium text-error hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {submittingDecision === 'returned'
-              ? 'Returning…'
-              : 'Return for Revision'}
-          </button>
-          <button
-            type="submit"
-            disabled={Boolean(submittingDecision)}
-            className="inline-flex min-h-10 items-center justify-center rounded-[5px] bg-accent-solid px-4 text-sm font-medium text-on-accent hover:bg-accent-solid-hover disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {submittingDecision === 'approved' ? 'Approving…' : 'Approve'}
-          </button>
-        </div>
-      </form>
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+            <button
+              type="button"
+              disabled={Boolean(submittingDecision)}
+              onClick={onRequestClose}
+              className="inline-flex min-h-9 items-center justify-center rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle disabled:opacity-60 sm:text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={Boolean(submittingDecision)}
+              onClick={() => void handleReviewDecision('rejected')}
+              className="inline-flex min-h-9 items-center justify-center rounded-[5px] border border-rejected-border bg-rejected-bg px-3 text-xs font-medium text-on-accent hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
+            >
+              {submittingDecision === 'rejected' ? 'Rejecting…' : 'Reject'}
+            </button>
+            <button
+              type="button"
+              disabled={Boolean(submittingDecision)}
+              onClick={() => void handleReviewDecision('returned')}
+              className="inline-flex min-h-9 items-center justify-center rounded-[5px] border border-error-border/60 bg-error-tint px-3 text-xs font-medium text-error hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
+            >
+              {submittingDecision === 'returned'
+                ? 'Returning…'
+                : 'Return for Revision'}
+            </button>
+            <button
+              type="submit"
+              disabled={Boolean(submittingDecision)}
+              className="inline-flex min-h-9 items-center justify-center rounded-[5px] bg-accent-solid px-4 text-xs font-medium text-on-accent hover:bg-accent-solid-hover disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
+            >
+              {submittingDecision === 'approved' ? 'Approving…' : 'Approve'}
+            </button>
+          </div>
+        </form>
+      </footer>
     </div>
   )
 }
 
 export function ReviewDialog({
   item,
+  intern = null,
   supervisorId,
   onClose,
   onReviewed,
   onAttachmentError,
 }) {
+  const dialogRef = useRef(null)
+  const pointerDownOutsideRef = useRef(false)
+  const isSubmittingRef = useRef(false)
+  const headingId = useId()
+  const descId = useId()
   const todayIso = getTodayIsoDate()
+  const open = Boolean(item)
+  const supportsClosedBy = supportsDialogClosedBy()
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+
+    if (open) {
+      if (dialog.hasAttribute('data-closing')) {
+        dialog.removeAttribute('data-closing')
+      }
+      if (!dialog.open) {
+        dialog.showModal()
+      }
+      return
+    }
+
+    if (dialog.open) {
+      void closeModalDialogAnimated(dialog)
+    }
+  }, [open])
+
+  const handleRequestClose = useCallback(() => {
+    if (isSubmittingRef.current) return
+    onClose?.()
+  }, [onClose])
+
+  const handleSubmittingChange = useCallback((isSubmitting) => {
+    isSubmittingRef.current = isSubmitting
+  }, [])
 
   return (
-    <SubmissionDialog
-      open={Boolean(item)}
-      title={
-        item
-          ? `Review ${item.typeLabel} — ${item.internName}`
-          : 'Review submission'
-      }
-      description="Approve this submission, or return or reject it with remarks for the intern."
-      onClose={onClose}
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={headingId}
+      aria-describedby={descId}
+      closedby={supportsClosedBy ? 'any' : undefined}
+      data-closedby={supportsClosedBy ? 'native' : 'fallback'}
+      onCancel={(event) => {
+        event.preventDefault()
+        handleRequestClose()
+      }}
+      onPointerDown={(event) => {
+        if (supportsClosedBy) return
+        const dialog = dialogRef.current
+        if (!dialog || event.target !== dialog) {
+          pointerDownOutsideRef.current = false
+          return
+        }
+        pointerDownOutsideRef.current = isPointerOutsideDialog(event, dialog)
+      }}
+      onClick={(event) => {
+        if (supportsClosedBy) return
+        const dialog = dialogRef.current
+        const clickedOutside =
+          pointerDownOutsideRef.current &&
+          dialog &&
+          event.target === dialog &&
+          isPointerOutsideDialog(event, dialog)
+        pointerDownOutsideRef.current = false
+        if (clickedOutside) {
+          handleRequestClose()
+        }
+      }}
+      className="review-drawer-dialog shadow-2xl"
     >
       {item ? (
         <ReviewDialogBody
           key={item.key}
           item={item}
+          intern={intern}
           supervisorId={supervisorId}
           todayIso={todayIso}
-          onClose={onClose}
+          headingId={headingId}
+          descId={descId}
+          onRequestClose={handleRequestClose}
           onReviewed={onReviewed}
           onAttachmentError={onAttachmentError}
+          onSubmittingChange={handleSubmittingChange}
         />
       ) : null}
-    </SubmissionDialog>
+    </dialog>
   )
 }
 

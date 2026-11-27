@@ -498,16 +498,28 @@ export function SubmissionDetailDialog({
     >
       {item ? (
         <div className="space-y-4 text-xs">
-          <dl className="grid grid-cols-1 gap-3 rounded-[5px] border border-rule bg-surface-subtle px-4 py-3 sm:grid-cols-3">
+          {/* Structured Header Metadata */}
+          <dl className="grid grid-cols-1 gap-3 rounded-[5px] border border-rule bg-surface-subtle px-4 py-3 sm:grid-cols-2">
             <div>
               <dt className="text-ink-muted">Intern</dt>
-              <dd className="mt-0.5 font-medium text-ink">
+              <dd className="mt-0.5 font-semibold text-ink">
                 {item.internName}
                 {item.studentIdNo ? (
-                  <span className="block tabular-nums font-normal text-ink-muted">
-                    {item.studentIdNo}
+                  <span className="ms-1.5 tabular-nums font-normal text-ink-muted">
+                    ({item.studentIdNo})
                   </span>
                 ) : null}
+                {item.companyName ? (
+                  <span className="block font-normal text-ink-muted">
+                    {item.companyName}
+                  </span>
+                ) : null}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-ink-muted">Current status</dt>
+              <dd className="mt-1">
+                <CoordinatorStatusPill statusKey={item.displayStatusKey} />
               </dd>
             </div>
             <div>
@@ -517,9 +529,11 @@ export function SubmissionDetailDialog({
               </dd>
             </div>
             <div>
-              <dt className="text-ink-muted">Current status</dt>
-              <dd className="mt-1">
-                <CoordinatorStatusPill statusKey={item.displayStatusKey} />
+              <dt className="text-ink-muted">
+                {item.kind === 'tasks' ? 'Deadline' : 'Reporting period'}
+              </dt>
+              <dd className="mt-0.5 font-medium tabular-nums text-ink">
+                {item.reportingPeriod}
               </dd>
             </div>
           </dl>
@@ -694,9 +708,9 @@ export function SubmissionDetailDialog({
             )}
           </div>
 
-          {item.row.reviewed_at || item.row.reviewed_by ? (
-            <div className="rounded-[5px] border border-rule bg-surface-subtle px-4 py-3">
-              <p className="font-semibold text-ink">Supervisor review</p>
+          <div className="rounded-[5px] border border-rule bg-surface-subtle px-4 py-3">
+            <p className="font-semibold text-ink">Supervisor review &amp; remarks</p>
+            {item.row.reviewed_at || item.row.reviewed_by ? (
               <dl className="mt-2 space-y-1.5">
                 <div className="flex flex-wrap justify-between gap-2">
                   <dt className="text-ink-muted">Reviewed by</dt>
@@ -719,12 +733,18 @@ export function SubmissionDetailDialog({
                   <dd className="mt-0.5 whitespace-pre-line text-ink break-words">
                     {item.row.reviewer_remarks?.trim()
                       ? item.row.reviewer_remarks
-                      : '—'}
+                      : 'No remarks provided.'}
                   </dd>
                 </div>
               </dl>
-            </div>
-          ) : null}
+            ) : (
+              <p className="mt-1.5 text-ink-muted">
+                {item.displayStatusKey === 'assigned_not_submitted'
+                  ? 'This task has not yet been submitted by the intern for supervisor review.'
+                  : 'Pending supervisor review — no review remarks recorded yet.'}
+              </p>
+            )}
+          </div>
 
           <div className="rounded-[5px] border border-rule bg-surface px-4 py-3">
             <p className="font-semibold text-ink">Submission history</p>

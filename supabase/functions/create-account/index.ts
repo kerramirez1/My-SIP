@@ -99,7 +99,7 @@ Deno.serve(async (req: Request) => {
 
   const { data: callerProfile, error: callerProfileError } = await serviceClient
     .from('profiles')
-    .select('role')
+    .select('full_name, role, is_active')
     .eq('id', callerUser.id)
     .maybeSingle()
 
@@ -110,9 +110,12 @@ Deno.serve(async (req: Request) => {
     )
   }
 
-  if (callerProfile?.role !== 'coordinator') {
+  if (
+    callerProfile?.role !== 'coordinator' ||
+    callerProfile?.is_active === false
+  ) {
     return jsonResponse(
-      { error: 'Only the SIP Coordinator can create accounts.' },
+      { error: 'Only an active SIP Coordinator can create accounts.' },
       403,
     )
   }
@@ -176,17 +179,21 @@ Deno.serve(async (req: Request) => {
     const { data: supervisorProfile, error: supervisorLookupError } =
       await serviceClient
         .from('profiles')
-        .select('id, role')
+        .select('id, role, is_active')
         .eq('id', supervisorId)
         .maybeSingle()
 
     if (
       supervisorLookupError ||
       !supervisorProfile ||
-      supervisorProfile.role !== 'supervisor'
+      supervisorProfile.role !== 'supervisor' ||
+      supervisorProfile.is_active === false
     ) {
       return jsonResponse(
-        { error: 'Assigned supervisor must be an existing supervisor account.' },
+        {
+          error:
+            'Assigned supervisor must be an existing active supervisor account.',
+        },
         400,
       )
     }
@@ -301,7 +308,25 @@ Deno.serve(async (req: Request) => {
     )
   }
 
-  // 7. Return created account summary (never include password)
+  // 7. Record account creation in audit trail (best-effort)
+  await serviceClient.from('account_audit_logs').insert({
+    action: 'created',
+    target_user_id: newUserId,
+    target_name: fullName,
+    target_email: email,
+    target_role: role,
+    performed_by: callerUser.id,
+    performed_by_name:
+      (callerProfile.full_name as string | undefined)?.trim() ||
+      'SIP Coordinator',
+    reason: 'Account created via Account Management',
+    metadata: {
+      company_name: companyName,
+      supervisor_id: supervisorId,
+    },
+  })
+
+  // 8. Return created account summary (never include password)
   return jsonResponse(
     {
       id: newUserId,

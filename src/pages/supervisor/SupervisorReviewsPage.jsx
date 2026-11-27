@@ -17,10 +17,25 @@ import {
 import { formatCalendarDate, formatWeekRange } from '../../lib/weekUtils'
 import {
   AssignTaskDialog,
-  AttachmentControl,
   PriorityBadge,
   ReviewDialog,
 } from './SupervisorDialogs'
+
+function collapseWhitespace(value) {
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function formatAccomplishmentPreview(row) {
+  const title = collapseWhitespace(row.title) || 'Weekly Accomplishment'
+  const summary = collapseWhitespace(row.description)
+  return {
+    title,
+    summary,
+    fullText: summary ? `${title} — ${summary}` : title,
+  }
+}
 
 export function SupervisorReviewsPage() {
   useDocumentTitle('Pending Reviews')
@@ -73,6 +88,8 @@ export function SupervisorReviewsPage() {
     },
     [reload],
   )
+
+  const isAccomplishmentsView = queueFilter === 'accomplishments'
 
   const filterButtons = [
     { key: 'all', label: 'All', count: pendingCounts.all },
@@ -218,23 +235,48 @@ export function SupervisorReviewsPage() {
               aria-labelledby="pending-reviews-heading"
               className="table-wrapper"
             >
-              <table className="submission-table">
+              <table className="submission-table supervisor-compact-table">
                 <caption className="visually-hidden">
-                  Pending intern submissions awaiting supervisor review
+                  {isAccomplishmentsView
+                    ? 'Pending weekly accomplishment reports awaiting supervisor review'
+                    : 'Pending intern submissions awaiting supervisor review'}
                 </caption>
+                <colgroup>
+                  <col className="w-[10.5rem]" />
+                  {isAccomplishmentsView ? (
+                    <>
+                      <col />
+                      <col className="w-[10.5rem]" />
+                      <col className="w-[8.25rem]" />
+                    </>
+                  ) : (
+                    <>
+                      <col className="w-[8rem]" />
+                      <col />
+                      <col className="w-[8.25rem]" />
+                    </>
+                  )}
+                  <col className="w-[7.25rem]" />
+                  <col className="w-[6.25rem]" />
+                </colgroup>
                 <thead>
                   <tr>
-                    <th scope="col" className="w-40">
-                      Intern
-                    </th>
-                    <th scope="col" className="w-36">
-                      Type
-                    </th>
-                    <th scope="col">Submission details</th>
-                    <th scope="col" className="w-32">
-                      Status
-                    </th>
-                    <th scope="col" className="col-action w-28">
+                    <th scope="col">Intern Name</th>
+                    {isAccomplishmentsView ? (
+                      <>
+                        <th scope="col">Accomplishment Summary</th>
+                        <th scope="col">Reporting Period</th>
+                        <th scope="col">Submission Date</th>
+                      </>
+                    ) : (
+                      <>
+                        <th scope="col">Type</th>
+                        <th scope="col">Submission Summary</th>
+                        <th scope="col">Submission Date</th>
+                      </>
+                    )}
+                    <th scope="col">Status</th>
+                    <th scope="col" className="col-action">
                       Action
                     </th>
                   </tr>
@@ -242,144 +284,161 @@ export function SupervisorReviewsPage() {
                 <tbody>
                   {filteredPendingItems.map((item) => {
                     const { row } = item
+                    const submissionDateIso = extractIsoDatePart(
+                      item.type === 'tasks'
+                        ? row.submitted_at || row.created_at
+                        : row.created_at,
+                    )
+                    const submissionDateLabel = submissionDateIso
+                      ? formatCalendarDate(submissionDateIso)
+                      : '—'
+                    const accomplishmentPreview =
+                      item.type === 'accomplishments'
+                        ? formatAccomplishmentPreview(row)
+                        : null
+                    const taskPreview =
+                      item.type === 'tasks'
+                        ? collapseWhitespace(
+                            row.completion_description || row.description,
+                          )
+                        : ''
+
                     return (
                       <tr key={item.key}>
                         <td
-                          data-label="Intern"
-                          className="whitespace-nowrap text-sm font-medium text-ink"
+                          data-label="Intern Name"
+                          className="text-sm font-medium text-ink"
                         >
-                          {item.internName}
+                          <div className="min-w-0">
+                            <p
+                              className="truncate"
+                              title={item.internName}
+                            >
+                              {item.internName}
+                            </p>
+                          </div>
                         </td>
 
-                        <td
-                          data-label="Type"
-                          className="whitespace-nowrap text-xs font-medium text-ink-muted"
-                        >
-                          {item.typeLabel}
-                        </td>
-
-                        <td data-label="Submission details">
-                          {item.type === 'attendance' ? (
-                            <div className="min-w-0 space-y-1 text-sm">
-                              <p className="font-medium tabular-nums text-ink">
-                                {formatCalendarDate(row.attendance_date)} —{' '}
-                                {formatWallClockTime(row.time_in)} to{' '}
-                                {formatWallClockTime(row.time_out)}
-                              </p>
-                              <p className="text-xs tabular-nums text-ink-muted">
-                                {formatBreakText(row.break_minutes)} — Rendered:{' '}
-                                <span className="font-medium text-ink">
-                                  {item.renderedMinutes !== null
-                                    ? `${formatDurationMinutes(item.renderedMinutes)} (${formatDecimalHours(item.renderedMinutes)})`
-                                    : '—'}
-                                </span>
-                              </p>
-                              <p className="text-xs tabular-nums text-ink-muted">
-                                Week of {formatWeekRange(row.week_of, 5)}
-                              </p>
-                            </div>
-                          ) : item.type === 'accomplishments' ? (
-                            <div className="min-w-0">
-                              <p className="font-medium text-ink">
-                                {row.title}
-                              </p>
-                              <p className="mt-0.5 text-xs tabular-nums text-ink-muted">
-                                Week of {formatWeekRange(row.week_of)}
-                              </p>
-                              {row.description ? (
-                                <p className="mt-1.5 max-w-[60ch] whitespace-pre-line text-sm text-ink-muted break-words">
-                                  {row.description}
+                        {isAccomplishmentsView ? (
+                          <>
+                            <td data-label="Accomplishment Summary">
+                              <div className="min-w-0">
+                                <p
+                                  className="truncate text-sm text-ink"
+                                  title={accomplishmentPreview.fullText}
+                                >
+                                  <span className="font-medium">
+                                    {accomplishmentPreview.title}
+                                  </span>
+                                  {accomplishmentPreview.summary ? (
+                                    <span className="text-ink-muted">
+                                      {' '}
+                                      — {accomplishmentPreview.summary}
+                                    </span>
+                                  ) : null}
                                 </p>
-                              ) : null}
-                              {row.skills_acquired ||
-                              row.challenges_encountered ||
-                              row.lessons_learned ? (
-                                <dl className="mt-2.5 space-y-2 border-t border-rule/70 pt-2">
-                                  {row.skills_acquired ? (
-                                    <div>
-                                      <dt className="text-xs font-medium text-ink-muted">
-                                        Skills acquired
-                                      </dt>
-                                      <dd className="mt-0.5 max-w-[60ch] whitespace-pre-line text-xs text-ink break-words">
-                                        {row.skills_acquired}
-                                      </dd>
-                                    </div>
-                                  ) : null}
-                                  {row.challenges_encountered ? (
-                                    <div>
-                                      <dt className="text-xs font-medium text-ink-muted">
-                                        Challenges encountered
-                                      </dt>
-                                      <dd className="mt-0.5 max-w-[60ch] whitespace-pre-line text-xs text-ink break-words">
-                                        {row.challenges_encountered}
-                                      </dd>
-                                    </div>
-                                  ) : null}
-                                  {row.lessons_learned ? (
-                                    <div>
-                                      <dt className="text-xs font-medium text-ink-muted">
-                                        Lessons learned
-                                      </dt>
-                                      <dd className="mt-0.5 max-w-[60ch] whitespace-pre-line text-xs text-ink break-words">
-                                        {row.lessons_learned}
-                                      </dd>
-                                    </div>
-                                  ) : null}
-                                </dl>
-                              ) : null}
-                              <AttachmentControl
-                                objectPath={row.attachment_url}
-                                onError={setAttachmentError}
-                              />
-                            </div>
-                          ) : (
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="font-medium text-ink">
-                                  {row.title}
-                                </p>
-                                <PriorityBadge priority={row.priority} />
                               </div>
-                              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs tabular-nums text-ink-muted">
-                                <span>
-                                  Deadline:{' '}
-                                  <span className="font-medium text-ink">
+                            </td>
+
+                            <td
+                              data-label="Reporting Period"
+                              className="whitespace-nowrap text-xs tabular-nums text-ink-muted"
+                            >
+                              {formatWeekRange(row.week_of)}
+                            </td>
+
+                            <td
+                              data-label="Submission Date"
+                              className="whitespace-nowrap text-xs tabular-nums text-ink-muted"
+                            >
+                              {submissionDateLabel}
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td
+                              data-label="Type"
+                              className="whitespace-nowrap text-xs font-medium text-ink-muted"
+                            >
+                              {item.typeLabel}
+                            </td>
+
+                            <td data-label="Submission Summary">
+                              {item.type === 'attendance' ? (
+                                <div className="min-w-0 space-y-0.5">
+                                  <p
+                                    className="truncate text-sm font-medium tabular-nums text-ink"
+                                    title={`${formatCalendarDate(row.attendance_date)} — ${formatWallClockTime(row.time_in)} to ${formatWallClockTime(row.time_out)}`}
+                                  >
+                                    {formatCalendarDate(row.attendance_date)} ·{' '}
+                                    {formatWallClockTime(row.time_in)} –{' '}
+                                    {formatWallClockTime(row.time_out)}
+                                    {item.renderedMinutes !== null
+                                      ? ` · ${formatDurationMinutes(item.renderedMinutes)} (${formatDecimalHours(item.renderedMinutes)})`
+                                      : ''}
+                                  </p>
+                                  <p className="truncate text-xs tabular-nums text-ink-muted">
+                                    Week of {formatWeekRange(row.week_of, 5)} ·{' '}
+                                    {formatBreakText(row.break_minutes)}
+                                  </p>
+                                </div>
+                              ) : item.type === 'accomplishments' ? (
+                                <div className="min-w-0 space-y-0.5">
+                                  <p
+                                    className="truncate text-sm text-ink"
+                                    title={accomplishmentPreview.fullText}
+                                  >
+                                    <span className="font-medium">
+                                      {accomplishmentPreview.title}
+                                    </span>
+                                    {accomplishmentPreview.summary ? (
+                                      <span className="text-ink-muted">
+                                        {' '}
+                                        — {accomplishmentPreview.summary}
+                                      </span>
+                                    ) : null}
+                                  </p>
+                                  <p className="truncate text-xs tabular-nums text-ink-muted">
+                                    Week of {formatWeekRange(row.week_of)}
+                                  </p>
+                                </div>
+                              ) : (
+                                <div className="min-w-0 space-y-0.5">
+                                  <div className="flex min-w-0 items-center gap-2">
+                                    <p
+                                      className="min-w-0 truncate text-sm font-medium text-ink"
+                                      title={row.title}
+                                    >
+                                      {row.title}
+                                    </p>
+                                    <PriorityBadge priority={row.priority} />
+                                  </div>
+                                  <p
+                                    className="truncate text-xs tabular-nums text-ink-muted"
+                                    title={
+                                      taskPreview
+                                        ? `Deadline ${formatCalendarDate(row.deadline || row.task_date)} — ${taskPreview}`
+                                        : `Deadline ${formatCalendarDate(row.deadline || row.task_date)}`
+                                    }
+                                  >
+                                    Deadline{' '}
                                     {formatCalendarDate(
                                       row.deadline || row.task_date,
                                     )}
-                                  </span>
-                                </span>
-                                {row.submitted_at ? (
-                                  <span>
-                                    Submitted on{' '}
-                                    {formatCalendarDate(
-                                      extractIsoDatePart(row.submitted_at),
-                                    )}
-                                  </span>
-                                ) : null}
-                              </div>
-                              {row.description ? (
-                                <p className="mt-1.5 max-w-[60ch] whitespace-pre-line text-xs text-ink-muted break-words">
-                                  Instructions: {row.description}
-                                </p>
-                              ) : null}
-                              {row.completion_description ? (
-                                <div className="mt-2 rounded-[5px] border border-rule bg-surface-subtle px-3 py-2 text-xs">
-                                  <p className="font-semibold text-ink">
-                                    Intern completion notes
-                                  </p>
-                                  <p className="mt-1 whitespace-pre-line text-ink-muted break-words">
-                                    {row.completion_description}
+                                    {taskPreview ? ` — ${taskPreview}` : ''}
                                   </p>
                                 </div>
-                              ) : null}
-                              <AttachmentControl
-                                objectPath={row.submission_attachment_url}
-                                onError={setAttachmentError}
-                              />
-                            </div>
-                          )}
-                        </td>
+                              )}
+                            </td>
+
+                            <td
+                              data-label="Submission Date"
+                              className="whitespace-nowrap text-xs tabular-nums text-ink-muted"
+                            >
+                              {submissionDateLabel}
+                            </td>
+                          </>
+                        )}
 
                         <td data-label="Status">
                           <StatusBadge status={row.status} />
@@ -392,7 +451,7 @@ export function SupervisorReviewsPage() {
                               setPageSuccess('')
                               setReviewItem(item)
                             }}
-                            className="inline-flex min-h-9 items-center justify-center rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
+                            className="inline-flex min-h-9 items-center justify-center whitespace-nowrap rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
                           >
                             <span>Review</span>
                             <span className="visually-hidden">
@@ -413,6 +472,9 @@ export function SupervisorReviewsPage() {
 
       <ReviewDialog
         item={reviewItem}
+        intern={
+          reviewItem ? (internById.get(reviewItem.row.intern_id) ?? null) : null
+        }
         supervisorId={supervisorId}
         onClose={closeReviewDialog}
         onReviewed={handleReviewed}
