@@ -1,0 +1,1158 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --color-canvas: #F3F4F6;
+  --color-surface: #FFFFFF;
+  --color-surface-subtle: #F8F9FB;
+  --color-ink: #14171D;
+  --color-ink-muted: #525968;
+  --color-rule: #DFE3E8;
+  --color-input-border: #717987;
+  --color-accent: #18498C;
+  --color-accent-hover: #12386B;
+  --color-accent-tint: #EAF1FA;
+  --color-accent-solid: #18498C;
+  --color-accent-solid-hover: #12386B;
+  --color-on-accent: #FFFFFF;
+  --color-success: #166534;
+  --color-success-border: #15803D;
+  --color-success-tint: #F0FDF4;
+  --color-error: #9E1C1C;
+  --color-error-border: #C92A2A;
+  --color-error-tint: #FDF2F2;
+}
+
+@layer base {
+  :root {
+    /* Raw light & dark palette primitives (single restrained cobalt accent) */
+    --canvas-light: #F3F4F6;
+    --canvas-dark: #101318;
+    --surface-light: #FFFFFF;
+    --surface-dark: #161A22;
+    --surface-subtle-light: #F8F9FB;
+    --surface-subtle-dark: #1D222D;
+    --ink-light: #14171D;
+    --ink-dark: #F1F4F9;
+    --ink-muted-light: #525968;
+    --ink-muted-dark: #9CA5B5;
+    --rule-light: #DFE3E8;
+    --rule-dark: #2B3240;
+    --input-border-light: #717987;
+    --input-border-dark: #677389;
+    --accent-light: #18498C;
+    --accent-dark: #78B1FF;
+    --accent-hover-light: #12386B;
+    --accent-hover-dark: #99C4FF;
+    --accent-tint-light: #EAF1FA;
+    --accent-tint-dark: #17263D;
+    --accent-solid-light: #18498C;
+    --accent-solid-dark: #2563B8;
+    --accent-solid-hover-light: #12386B;
+    --accent-solid-hover-dark: #1D529C;
+    --on-accent-light: #FFFFFF;
+    --on-accent-dark: #FFFFFF;
+    --success-light: #166534;
+    --success-dark: #86EFAC;
+    --success-border-light: #15803D;
+    --success-border-dark: #2E7D4F;
+    --success-tint-light: #F0FDF4;
+    --success-tint-dark: #14291E;
+    --error-light: #9E1C1C;
+    --error-dark: #F89696;
+    --error-border-light: #C92A2A;
+    --error-border-dark: #DF5C58;
+    --error-tint-light: #FDF2F2;
+    --error-tint-dark: #2A191C;
+    --scrollbar-thumb-light: #6B7280;
+    --scrollbar-thumb-dark: #6C7688;
+    --scrollbar-track-light: #EEF0F3;
+    --scrollbar-track-dark: #13171F;
+    --backdrop-scrim-light: rgb(20 23 29 / 0.42);
+    --backdrop-scrim-dark: rgb(5 7 11 / 0.68);
+
+    /* Base light tokens (fallback when light-dark() is unsupported) */
+    --color-canvas: var(--canvas-light);
+    --color-surface: var(--surface-light);
+    --color-surface-subtle: var(--surface-subtle-light);
+    --color-ink: var(--ink-light);
+    --color-ink-muted: var(--ink-muted-light);
+    --color-rule: var(--rule-light);
+    --color-input-border: var(--input-border-light);
+    --color-accent: var(--accent-light);
+    --color-accent-hover: var(--accent-hover-light);
+    --color-accent-tint: var(--accent-tint-light);
+    --color-accent-solid: var(--accent-solid-light);
+    --color-accent-solid-hover: var(--accent-solid-hover-light);
+    --color-on-accent: var(--on-accent-light);
+    --color-success: var(--success-light);
+    --color-success-border: var(--success-border-light);
+    --color-success-tint: var(--success-tint-light);
+    --color-error: var(--error-light);
+    --color-error-border: var(--error-border-light);
+    --color-error-tint: var(--error-tint-light);
+    --color-scrollbar-thumb: var(--scrollbar-thumb-light);
+    --color-scrollbar-track: var(--scrollbar-track-light);
+    --color-backdrop-scrim: var(--backdrop-scrim-light);
+
+    --target-size: 24px;
+    --topbar-height: 3.5rem;
+    --resolved-scheme: light;
+
+    /* Automatically adapt native UI to user system preferences */
+    color-scheme: light dark;
+
+    /* Fallback for browsers without light-dark() support */
+    @media (prefers-color-scheme: dark) {
+      --resolved-scheme: dark;
+      --color-canvas: var(--canvas-dark);
+      --color-surface: var(--surface-dark);
+      --color-surface-subtle: var(--surface-subtle-dark);
+      --color-ink: var(--ink-dark);
+      --color-ink-muted: var(--ink-muted-dark);
+      --color-rule: var(--rule-dark);
+      --color-input-border: var(--input-border-dark);
+      --color-accent: var(--accent-dark);
+      --color-accent-hover: var(--accent-hover-dark);
+      --color-accent-tint: var(--accent-tint-dark);
+      --color-accent-solid: var(--accent-solid-dark);
+      --color-accent-solid-hover: var(--accent-solid-hover-dark);
+      --color-on-accent: var(--on-accent-dark);
+      --color-success: var(--success-dark);
+      --color-success-border: var(--success-border-dark);
+      --color-success-tint: var(--success-tint-dark);
+      --color-error: var(--error-dark);
+      --color-error-border: var(--error-border-dark);
+      --color-error-tint: var(--error-tint-dark);
+      --color-scrollbar-thumb: var(--scrollbar-thumb-dark);
+      --color-scrollbar-track: var(--scrollbar-track-dark);
+      --color-backdrop-scrim: var(--backdrop-scrim-dark);
+    }
+
+    /* Map <meta name="color-scheme"> override back to CSS color-scheme */
+    &:has(> head > meta[name="color-scheme"][content="dark"]) {
+      color-scheme: dark;
+      --resolved-scheme: dark;
+      --color-canvas: var(--canvas-dark);
+      --color-surface: var(--surface-dark);
+      --color-surface-subtle: var(--surface-subtle-dark);
+      --color-ink: var(--ink-dark);
+      --color-ink-muted: var(--ink-muted-dark);
+      --color-rule: var(--rule-dark);
+      --color-input-border: var(--input-border-dark);
+      --color-accent: var(--accent-dark);
+      --color-accent-hover: var(--accent-hover-dark);
+      --color-accent-tint: var(--accent-tint-dark);
+      --color-accent-solid: var(--accent-solid-dark);
+      --color-accent-solid-hover: var(--accent-solid-hover-dark);
+      --color-on-accent: var(--on-accent-dark);
+      --color-success: var(--success-dark);
+      --color-success-border: var(--success-border-dark);
+      --color-success-tint: var(--success-tint-dark);
+      --color-error: var(--error-dark);
+      --color-error-border: var(--error-border-dark);
+      --color-error-tint: var(--error-tint-dark);
+      --color-scrollbar-thumb: var(--scrollbar-thumb-dark);
+      --color-scrollbar-track: var(--scrollbar-track-dark);
+      --color-backdrop-scrim: var(--backdrop-scrim-dark);
+    }
+
+    &:has(> head > meta[name="color-scheme"][content="light"]) {
+      color-scheme: light;
+      --resolved-scheme: light;
+      --color-canvas: var(--canvas-light);
+      --color-surface: var(--surface-light);
+      --color-surface-subtle: var(--surface-subtle-light);
+      --color-ink: var(--ink-light);
+      --color-ink-muted: var(--ink-muted-light);
+      --color-rule: var(--rule-light);
+      --color-input-border: var(--input-border-light);
+      --color-accent: var(--accent-light);
+      --color-accent-hover: var(--accent-hover-light);
+      --color-accent-tint: var(--accent-tint-light);
+      --color-accent-solid: var(--accent-solid-light);
+      --color-accent-solid-hover: var(--accent-solid-hover-light);
+      --color-on-accent: var(--on-accent-light);
+      --color-success: var(--success-light);
+      --color-success-border: var(--success-border-light);
+      --color-success-tint: var(--success-tint-light);
+      --color-error: var(--error-light);
+      --color-error-border: var(--error-border-light);
+      --color-error-tint: var(--error-tint-light);
+      --color-scrollbar-thumb: var(--scrollbar-thumb-light);
+      --color-scrollbar-track: var(--scrollbar-track-light);
+      --color-backdrop-scrim: var(--backdrop-scrim-light);
+    }
+
+    /* Modern dynamic color resolution using light-dark() */
+    @supports (color: light-dark(white, black)) {
+      --color-canvas: light-dark(var(--canvas-light), var(--canvas-dark));
+      --color-surface: light-dark(var(--surface-light), var(--surface-dark));
+      --color-surface-subtle: light-dark(
+        var(--surface-subtle-light),
+        var(--surface-subtle-dark)
+      );
+      --color-ink: light-dark(var(--ink-light), var(--ink-dark));
+      --color-ink-muted: light-dark(
+        var(--ink-muted-light),
+        var(--ink-muted-dark)
+      );
+      --color-rule: light-dark(var(--rule-light), var(--rule-dark));
+      --color-input-border: light-dark(
+        var(--input-border-light),
+        var(--input-border-dark)
+      );
+      --color-accent: light-dark(var(--accent-light), var(--accent-dark));
+      --color-accent-hover: light-dark(
+        var(--accent-hover-light),
+        var(--accent-hover-dark)
+      );
+      --color-accent-tint: light-dark(
+        var(--accent-tint-light),
+        var(--accent-tint-dark)
+      );
+      --color-accent-solid: light-dark(
+        var(--accent-solid-light),
+        var(--accent-solid-dark)
+      );
+      --color-accent-solid-hover: light-dark(
+        var(--accent-solid-hover-light),
+        var(--accent-solid-hover-dark)
+      );
+      --color-on-accent: light-dark(
+        var(--on-accent-light),
+        var(--on-accent-dark)
+      );
+      --color-success: light-dark(var(--success-light), var(--success-dark));
+      --color-success-border: light-dark(
+        var(--success-border-light),
+        var(--success-border-dark)
+      );
+      --color-success-tint: light-dark(
+        var(--success-tint-light),
+        var(--success-tint-dark)
+      );
+      --color-error: light-dark(var(--error-light), var(--error-dark));
+      --color-error-border: light-dark(
+        var(--error-border-light),
+        var(--error-border-dark)
+      );
+      --color-error-tint: light-dark(
+        var(--error-tint-light),
+        var(--error-tint-dark)
+      );
+      --color-scrollbar-thumb: light-dark(
+        var(--scrollbar-thumb-light),
+        var(--scrollbar-thumb-dark)
+      );
+      --color-scrollbar-track: light-dark(
+        var(--scrollbar-track-light),
+        var(--scrollbar-track-dark)
+      );
+      --color-backdrop-scrim: light-dark(
+        var(--backdrop-scrim-light),
+        var(--backdrop-scrim-dark)
+      );
+    }
+  }
+
+  @media (pointer: coarse) {
+    :root {
+      --target-size: 44px;
+    }
+  }
+
+  html {
+    font-family: var(--font-sans);
+    font-size-adjust: from-font;
+    color: var(--color-ink);
+    background-color: var(--color-surface);
+    scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
+    scrollbar-width: auto;
+    scrollbar-gutter: stable;
+    scroll-padding-block-start: calc(
+      var(--topbar-height) + env(safe-area-inset-top, 0px) + 1rem
+    );
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  @supports not (scrollbar-color: auto) {
+    html::-webkit-scrollbar {
+      width: 12px;
+      height: 12px;
+    }
+
+    html::-webkit-scrollbar-thumb {
+      background: var(--color-scrollbar-thumb);
+    }
+
+    html::-webkit-scrollbar-track {
+      background: var(--color-scrollbar-track);
+    }
+  }
+
+  body {
+    margin: 0;
+    line-height: 1.5;
+    text-align: start;
+    overflow-wrap: break-word;
+    accent-color: var(--color-accent-solid);
+  }
+
+  ::selection {
+    background-color: var(--color-accent-tint);
+    color: var(--color-ink);
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p,
+  li {
+    text-wrap: pretty;
+  }
+
+  img,
+  video {
+    max-inline-size: 100%;
+    block-size: auto;
+  }
+
+  :where(a, code) {
+    overflow-wrap: anywhere;
+  }
+
+  :where(
+    button,
+    select,
+    textarea,
+    input:not([type="checkbox"], [type="radio"]),
+    [role="button"],
+    nav a,
+    label:has(input[type="checkbox"], input[type="radio"])
+  ) {
+    min-block-size: var(--target-size);
+    min-inline-size: var(--target-size);
+  }
+
+  :where(a):hover {
+    text-decoration-thickness: 2px;
+  }
+
+  :where(button) {
+    transition:
+      background-color 140ms ease-out,
+      border-color 140ms ease-out,
+      color 140ms ease-out,
+      scale 140ms ease-out;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    :where(button):active:not(:disabled) {
+      scale: 0.985;
+    }
+  }
+
+  :where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+/* Accessible visually hidden utility */
+.visually-hidden:where(:not(:focus-within, :active)) {
+  position: absolute !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}
+
+.skip-link {
+  position: fixed;
+  inset-block-start: max(0.75rem, env(safe-area-inset-top, 0px));
+  inset-inline-start: max(0.75rem, env(safe-area-inset-left, 0px));
+  z-index: 50;
+  padding: 0.625rem 1rem;
+  background-color: var(--color-accent-solid);
+  color: var(--color-on-accent);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  border-radius: 0.25rem;
+}
+
+/* Two-state color-scheme toggle visibility branching (no JS class required) */
+.scheme-toggle-when-dark {
+  display: none;
+}
+
+.scheme-toggle-when-light {
+  display: inline-flex;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(:has(> head > meta[name="color-scheme"][content="light"])) {
+    & .scheme-toggle-when-dark {
+      display: inline-flex;
+    }
+
+    & .scheme-toggle-when-light {
+      display: none;
+    }
+  }
+}
+
+:root:has(> head > meta[name="color-scheme"][content="dark"]) {
+  & .scheme-toggle-when-dark {
+    display: inline-flex;
+  }
+
+  & .scheme-toggle-when-light {
+    display: none;
+  }
+}
+
+/* Non-critical typographic optical refinement in dark mode using container style queries */
+@container style(--resolved-scheme: dark) {
+  .ledger-title {
+    letter-spacing: -0.015em;
+  }
+}
+
+/* State-aware sticky topbar (direct parent disables scroll anchoring per spec) */
+.workspace-column {
+  overflow-anchor: none;
+}
+
+.topbar-sticky-wrap {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 20;
+  container-type: scroll-state;
+  container-name: topbar-header;
+}
+
+.topbar-shell {
+  min-block-size: var(--topbar-height);
+  padding-block-start: env(safe-area-inset-top, 0px);
+  padding-inline-start: max(1rem, env(safe-area-inset-left, 0px));
+  padding-inline-end: max(1rem, env(safe-area-inset-right, 0px));
+  background-color: var(--color-surface);
+  border-block-end: 1px solid var(--color-rule);
+  transition:
+    background-color 180ms ease-out,
+    border-color 180ms ease-out;
+}
+
+@media (min-width: 40rem) {
+  .topbar-shell {
+    padding-inline-start: max(2rem, env(safe-area-inset-left, 0px));
+    padding-inline-end: max(2rem, env(safe-area-inset-right, 0px));
+  }
+}
+
+@container topbar-header scroll-state(stuck: top) {
+  .topbar-shell {
+    background-color: var(--color-surface-subtle);
+    border-block-end-color: var(--color-input-border);
+  }
+}
+
+/* Semantic Breadcrumbs with CSS-generated non-announced separator */
+.breadcrumb > ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.breadcrumb > ol > li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-inline-size: 0;
+}
+
+.breadcrumb > ol > li + li::before {
+  content: "/" / "";
+  color: var(--color-ink-muted);
+  font-size: 0.8125rem;
+  user-select: none;
+}
+
+.breadcrumb > ol > li > a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 2rem;
+  padding-inline: 0.25rem;
+  border-radius: 3px;
+  font-size: 0.875rem;
+  color: var(--color-ink-muted);
+  text-decoration: none;
+}
+
+.breadcrumb > ol > li > a:hover,
+.breadcrumb > ol > li > a:focus-visible {
+  color: var(--color-ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.breadcrumb > ol > li > a:focus-visible {
+  position: relative;
+  z-index: 1;
+}
+
+.breadcrumb > ol > li > a[aria-current="page"] {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+/* Sidebar navigation active indicator (color + start rail) */
+.nav-link {
+  border-radius: 0 5px 5px 0;
+}
+
+.nav-link[aria-current="page"] {
+  background-color: var(--color-accent-tint);
+  color: var(--color-accent);
+  font-weight: 600;
+  border-inline-start-color: var(--color-accent);
+}
+
+/* Form controls: autofill highlight, post-interaction validation, and :has() parent cues */
+.form-control:is(:autofill, :-webkit-autofill) {
+  box-shadow: inset 0 0 0 2px var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.form-control:is(:autofill, :-webkit-autofill):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+.form-control:not([type="range"]):is(:user-invalid, .user-invalid-fallback) {
+  border-color: var(--color-error-border);
+  box-shadow: inset 0 0 0 1px var(--color-error-border);
+}
+
+.field-error-msg {
+  display: none;
+  align-items: flex-start;
+  gap: 0.375rem;
+  margin-block-start: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--color-error);
+}
+
+.field-group:has(.form-control:is(:user-invalid, .user-invalid-fallback)),
+.field-group.has-error-fallback {
+  & > label {
+    color: var(--color-error);
+  }
+
+  & > .field-error-msg {
+    display: flex;
+  }
+}
+
+/* Brand-consistent checkbox fallback for browsers without accent-color */
+@supports not (accent-color: auto) {
+  .branded-checkbox {
+    position: absolute !important;
+    clip-path: inset(50%) !important;
+    overflow: hidden !important;
+    width: 1px !important;
+    height: 1px !important;
+    margin: -1px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    white-space: nowrap !important;
+  }
+
+  .branded-checkbox-label {
+    position: relative;
+    padding-inline-start: 1.75rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .branded-checkbox + span::before {
+    content: "";
+    position: absolute;
+    inset-inline-start: 0;
+    inset-block-start: 50%;
+    translate: 0 -50%;
+    inline-size: 1.125rem;
+    block-size: 1.125rem;
+    border: 2px solid var(--color-input-border);
+    background-color: var(--color-surface);
+    border-radius: 3px;
+    box-sizing: border-box;
+  }
+
+  .branded-checkbox:focus-visible + span::before {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  .branded-checkbox:checked + span::before {
+    background-color: var(--color-accent-solid);
+    border-color: var(--color-accent-solid);
+  }
+
+  .branded-checkbox:checked + span::after {
+    content: "✓";
+    position: absolute;
+    inset-inline-start: 0.22rem;
+    inset-block-start: 50%;
+    translate: 0 -50%;
+    color: var(--color-on-accent);
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+}
+
+/* Single-line overflow preserving filename extension */
+.filename-truncate {
+  display: inline-flex;
+  max-inline-size: min(100%, 16rem);
+  white-space: nowrap;
+}
+
+.filename-truncate > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Modal dialog scroll containment (prevent background scroll without root overflow lock) */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+/* Mobile navigation modal drawer */
+dialog.mobile-nav-dialog {
+  --drawer-width: min(17.5rem, 82dvw, calc(100dvw - 2.5rem));
+  inset-block: 0;
+  inset-inline-start: 0;
+  inset-inline-end: auto;
+  inline-size: var(--drawer-width);
+  block-size: 100dvh;
+  max-inline-size: none;
+  max-block-size: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-ink);
+  overflow: auto;
+  opacity: 0;
+  transition-property: opacity, translate, display, overlay;
+  transition-duration: 0.22s;
+  transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
+
+  @media (prefers-reduced-motion: no-preference) {
+    translate: -100% 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition-duration: 0.1s;
+  }
+}
+
+dialog.mobile-nav-dialog::backdrop {
+  background-color: rgb(0 0 0 / 0);
+  transition-property: background-color, display, overlay;
+  transition-duration: 0.22s;
+  transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
+
+  @media (prefers-reduced-motion: reduce) {
+    transition-duration: 0.1s;
+  }
+}
+
+dialog.mobile-nav-dialog[open]:where(:not([data-closing])) {
+  opacity: 1;
+
+  @starting-style {
+    opacity: 0;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    translate: 0 0;
+
+    @starting-style {
+      translate: -100% 0;
+    }
+  }
+
+  &::backdrop {
+    background-color: var(--color-backdrop-scrim);
+
+    @starting-style {
+      background-color: rgb(0 0 0 / 0);
+    }
+  }
+}
+
+/* Centered architectural form modal dialog */
+dialog.form-dialog {
+  inline-size: min(35rem, calc(100dvw - 2rem));
+  max-inline-size: none;
+  max-block-size: calc(100dvh - 2.5rem);
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--color-rule);
+  border-radius: 6px;
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  overflow: auto;
+  opacity: 0;
+  transition-property: opacity, translate, display, overlay;
+  transition-duration: 0.18s;
+  transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
+
+  @media (prefers-reduced-motion: no-preference) {
+    translate: 0 0.5rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition-duration: 0.08s;
+  }
+}
+
+dialog.form-dialog::backdrop {
+  background-color: rgb(0 0 0 / 0);
+  transition-property: background-color, display, overlay;
+  transition-duration: 0.18s;
+  transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
+
+  @media (prefers-reduced-motion: reduce) {
+    transition-duration: 0.08s;
+  }
+}
+
+dialog.form-dialog[open]:where(:not([data-closing])) {
+  opacity: 1;
+
+  @starting-style {
+    opacity: 0;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    translate: 0 0;
+
+    @starting-style {
+      translate: 0 0.5rem;
+    }
+  }
+
+  &::backdrop {
+    background-color: var(--color-backdrop-scrim);
+
+    @starting-style {
+      background-color: rgb(0 0 0 / 0);
+    }
+  }
+}
+
+/* Responsive data tables using named container queries */
+.table-wrapper {
+  container: submission-table / inline-size;
+  max-inline-size: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.submission-table {
+  inline-size: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  text-align: start;
+}
+
+.submission-table thead th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  text-align: start;
+  background-color: var(--color-surface-subtle);
+  border-block-end: 1px solid var(--color-rule);
+  padding: 0.75rem 1.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-ink-muted);
+  text-wrap: balance;
+}
+
+.submission-table tbody td {
+  text-align: start;
+  border-block-end: 1px solid var(--color-rule);
+  padding: 1rem 1.25rem;
+  vertical-align: top;
+}
+
+.submission-table :is(th, td).col-action {
+  text-align: end;
+}
+
+.submission-table tbody tr:last-child td {
+  border-block-end: 0;
+}
+
+@media (hover: hover) {
+  .submission-table tbody tr {
+    transition: background-color 120ms ease-out;
+  }
+
+  .submission-table tbody tr:hover {
+    background-color: var(--color-surface-subtle);
+  }
+}
+
+@container submission-table (inline-size < 42rem) {
+  .submission-table,
+  .submission-table thead,
+  .submission-table tbody,
+  .submission-table tr,
+  .submission-table th,
+  .submission-table td {
+    display: block;
+  }
+
+  .submission-table thead {
+    display: none;
+  }
+
+  .submission-table tbody tr {
+    border-block-end: 1px solid var(--color-rule);
+    background-color: var(--color-surface);
+  }
+
+  .submission-table tbody tr:last-child {
+    border-block-end: 0;
+  }
+
+  .submission-table tbody td {
+    display: grid;
+    grid-template-columns: 7.5rem 1fr;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    text-align: start;
+    border-block-end: 1px solid color-mix(in oklab, var(--color-rule) 55%, transparent);
+  }
+
+  .submission-table tbody td.col-action {
+    text-align: start;
+    justify-items: start;
+  }
+
+  .submission-table tbody td:last-child {
+    border-block-end: 0;
+  }
+
+  .submission-table tbody td[data-label]::before {
+    content: attr(data-label);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--color-ink-muted);
+    padding-block-start: 0.125rem;
+  }
+}
+
+/* Determinate internship progress bar (<progress> native semantics) */
+progress.internship-progress {
+  --progress-fill: var(--color-accent-solid);
+  appearance: none;
+  display: block;
+  inline-size: 100%;
+  block-size: 0.5rem;
+  border: 0 solid;
+  border-radius: 9999px;
+  overflow: clip;
+  background-color: var(--color-rule);
+}
+
+progress.internship-progress.is-complete {
+  --progress-fill: var(--color-success-border);
+}
+
+progress.internship-progress::-webkit-progress-bar {
+  background: transparent;
+}
+
+progress.internship-progress::-webkit-progress-value {
+  background-color: var(--progress-fill);
+  border-radius: 9999px;
+  transition: inline-size 300ms ease-out;
+}
+
+progress.internship-progress::-moz-progress-bar {
+  background-color: var(--progress-fill);
+  border-radius: 9999px;
+  transition: inline-size 300ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  progress.internship-progress::-webkit-progress-value {
+    transition: none;
+  }
+
+  progress.internship-progress::-moz-progress-bar {
+    transition: none;
+  }
+}
+
+/* Container-aware subgrid 4-column summary ledger strip */
+.dashboard-metric-wrap {
+  container: metric-strip / inline-size;
+}
+
+.dashboard-metric-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+.dashboard-metric-cell {
+  display: grid;
+  grid-template-rows: auto auto auto;
+  align-content: start;
+  row-gap: 0.25rem;
+  padding: 1rem 1.25rem;
+  border-block-start: 1px solid var(--color-rule);
+}
+
+.dashboard-metric-cell:first-child {
+  border-block-start: 0;
+}
+
+@container metric-strip (inline-size >= 30rem) {
+  .dashboard-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-metric-cell {
+    border-block-start: 0;
+    border-block-end: 1px solid var(--color-rule);
+  }
+
+  .dashboard-metric-cell:nth-child(odd) {
+    border-inline-end: 1px solid var(--color-rule);
+  }
+
+  .dashboard-metric-cell:nth-last-child(-n + 2) {
+    border-block-end: 0;
+  }
+}
+
+@container metric-strip (inline-size >= 48rem) {
+  .dashboard-metric-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-rows: auto auto auto;
+  }
+
+  .dashboard-metric-cell {
+    grid-row: span 3;
+    grid-template-rows: auto auto auto;
+    grid-template-rows: subgrid;
+    border-block-end: 0;
+    border-inline-end: 1px solid var(--color-rule);
+  }
+
+  .dashboard-metric-cell:last-child {
+    border-inline-end: 0;
+  }
+}
+
+/* Container-aware Monday-Saturday attendance day strip */
+.week-strip-wrap {
+  container: week-strip / inline-size;
+}
+
+.week-strip-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.625rem;
+}
+
+@container week-strip (inline-size >= 26rem) {
+  .week-strip-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container week-strip (inline-size >= 46rem) {
+  .week-strip-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+/* Native indeterminate <progress> spinner */
+@property --arc-start {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@property --arc-end {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@property --progress-dash-animation {
+  syntax: "*";
+  inherits: false;
+  initial-value: , progress-dash 3s ease-in-out infinite;
+}
+
+progress.loading-spinner:indeterminate::-webkit-progress-bar {
+  display: none;
+  background: none;
+}
+
+progress.loading-spinner:indeterminate::-webkit-progress-value {
+  display: none;
+  background: none;
+}
+
+progress.loading-spinner:indeterminate::-moz-progress-bar {
+  display: none;
+  background: none;
+}
+
+progress.loading-spinner:indeterminate {
+  --_from: calc(90deg + var(--arc-start, 0deg));
+  --_to: calc(90deg + var(--arc-end, 158deg));
+  --size: 1.75rem;
+  --thickness: 2.5px;
+  --spinner-color: var(--color-accent);
+  --track-color: var(--color-rule);
+  --spinner-duration: 1.5s;
+  --_used-spinner-duration: var(--spinner-duration);
+
+  position: relative;
+  display: block;
+  inline-size: var(--size);
+  block-size: var(--size);
+  border-radius: 50%;
+  appearance: none;
+  background: conic-gradient(
+      from var(--_from),
+      var(--spinner-color) calc(var(--_to) - var(--_from)),
+      transparent 0
+    )
+    var(--track-color);
+
+  @supports (background-clip: border-area) {
+    background-clip: border-area;
+    border: var(--thickness) solid transparent;
+    background-origin: border-box;
+  }
+
+  @supports not (background-clip: border-area) {
+    --clip-boundary: calc(100% - var(--thickness));
+    mask-image: radial-gradient(
+      farthest-side,
+      transparent var(--clip-boundary),
+      black var(--clip-boundary)
+    );
+    border: 0;
+  }
+
+  animation:
+    progress-spin var(--_used-spinner-duration) linear infinite
+    var(--progress-dash-animation, );
+}
+
+@keyframes progress-spin {
+  to {
+    rotate: 1turn;
+  }
+}
+
+@keyframes progress-dash {
+  from {
+    --arc-start: 0deg;
+    --arc-end: 3deg;
+  }
+  50% {
+    --arc-start: 100deg;
+    --arc-end: 358deg;
+  }
+  to {
+    --arc-start: 360deg;
+    --arc-end: 363deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  progress.loading-spinner:indeterminate {
+    --_used-spinner-duration: 6s;
+    --progress-dash-animation: ;
+    --arc-end: 158deg;
+  }
+}
+
+/* Forced Colors Mode (Windows High Contrast) fallbacks */
+@media (forced-colors: active) {
+  :where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+    outline: 2px solid Highlight;
+  }
+
+  .nav-link[aria-current="page"] {
+    border-inline-start-color: Highlight;
+    outline: 1px solid Highlight;
+  }
+
+  .breadcrumb > ol > li > a[aria-current="page"] {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+
+  .status-badge {
+    border: 1px solid CanvasText;
+  }
+
+  dialog.form-dialog {
+    border: 2px solid CanvasText;
+  }
+
+  progress.internship-progress {
+    forced-color-adjust: none;
+    border: 1px solid CanvasText;
+    background-color: Canvas;
+    --progress-fill: Highlight;
+  }
+
+  progress.loading-spinner:indeterminate {
+    forced-color-adjust: none;
+    --spinner-color: CanvasText;
+    --track-color: Canvas;
+  }
+}
