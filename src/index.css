@@ -557,8 +557,8 @@
 
 /* Form controls: autofill highlight, post-interaction validation, and :has() parent cues */
 .form-control:is(:autofill, :-webkit-autofill) {
-  box-shadow: inset 0 0 0 2px var(--color-accent);
-  border-color: var(--color-accent);
+  -webkit-text-fill-color: var(--color-ink);
+  box-shadow: inset 0 0 0 1000px var(--color-surface);
 }
 
 .form-control:is(:autofill, :-webkit-autofill):focus-visible {

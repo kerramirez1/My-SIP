@@ -182,6 +182,10 @@ export function LoginPage() {
             {submitting ? 'Logging in…' : 'Log in'}
           </button>
         </div>
+
+        <p className="text-sm text-ink-muted">
+          Forgot your password? Contact your SIP Coordinator for assistance.
+        </p>
       </form>
     </section>
   )
