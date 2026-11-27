@@ -100,6 +100,57 @@ export function NavIcon({ name, className = 'size-4 shrink-0' }) {
           />
         </svg>
       )
+    case 'submissions':
+      return (
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 20 20"
+          className={className}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.65"
+        >
+          <path d="M4.25 4.25h11.5v11.5H4.25z" />
+          <path d="M4.25 11.75h3.25l1.25 1.75h2.5l1.25-1.75h3.25" strokeLinecap="square" />
+          <path d="M7.5 8h5" strokeLinecap="square" />
+        </svg>
+      )
+    case 'reports':
+      return (
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 20 20"
+          className={className}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.65"
+        >
+          <path d="M3.5 4.25v11.5h13" strokeLinecap="square" />
+          <path
+            d="M6 12.75 9.25 9.5l2.5 2 4-4.75"
+            strokeLinecap="square"
+          />
+        </svg>
+      )
+    case 'settings':
+      return (
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 20 20"
+          className={className}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.65"
+        >
+          <path
+            d="M4 6h12M4 10h12M4 14h12"
+            strokeLinecap="square"
+          />
+          <circle cx="7.5" cy="6" r="1.6" fill="var(--color-surface-subtle)" />
+          <circle cx="12.5" cy="10" r="1.6" fill="var(--color-surface-subtle)" />
+          <circle cx="8.5" cy="14" r="1.6" fill="var(--color-surface-subtle)" />
+        </svg>
+      )
     case 'profile':
       return (
         <svg

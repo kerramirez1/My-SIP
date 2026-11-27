@@ -40,19 +40,51 @@ export const ROLE_CONFIG = {
   coordinator: {
     role: 'coordinator',
     label: 'Coordinator',
-    dashboardLabel: 'Coordinator Dashboard',
+    dashboardLabel: 'Dashboard',
     path: '/coordinator',
     navItems: [
       {
         to: '/coordinator',
-        label: 'Coordinator Dashboard',
+        label: 'Dashboard',
         icon: 'dashboard',
         end: true,
+        group: 'workspace',
+      },
+      {
+        to: '/coordinator/accounts',
+        label: 'Account Management',
+        icon: 'interns',
+        group: 'workspace',
       },
       {
         to: '/coordinator/monitoring',
         label: 'Monitoring',
         icon: 'monitoring',
+        group: 'workspace',
+      },
+      {
+        to: '/coordinator/submissions',
+        label: 'Submissions & Reviews',
+        icon: 'submissions',
+        group: 'workspace',
+      },
+      {
+        to: '/coordinator/reports',
+        label: 'Reports & Analytics',
+        icon: 'reports',
+        group: 'workspace',
+      },
+      {
+        to: '/coordinator/profile',
+        label: 'My Profile',
+        icon: 'profile',
+        group: 'account',
+      },
+      {
+        to: '/coordinator/settings',
+        label: 'Settings',
+        icon: 'settings',
+        group: 'account',
       },
     ],
   },

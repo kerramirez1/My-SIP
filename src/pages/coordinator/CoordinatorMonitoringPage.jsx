@@ -1,303 +1,114 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { AlertMessage } from '../../components/AlertMessage'
-import { PaperclipIcon } from '../../components/Icons'
-import { StatusBadge } from '../../components/StatusBadge'
 import { SubmissionDialog } from '../../components/SubmissionDialog'
-import {
-  formatDecimalHours,
-  formatDurationMinutes,
-  formatWallClockTime,
-} from '../../lib/attendanceUtils'
-import { getDeadlineBadge } from '../../lib/internDashboardUtils'
-import {
-  getAttachmentDisplayName,
-  splitFilenameForDisplay,
-} from '../../lib/submissionHelpers'
+import { formatDecimalHours } from '../../lib/attendanceUtils'
 import { supabase } from '../../lib/supabaseClient'
-import {
-  buildProgressReportCsv,
-  buildSubmissionsReportCsv,
-  extractIsoDatePart,
-  formatBreakText,
-  useCoordinatorData,
-} from '../../lib/useCoordinatorData'
+import { useCoordinatorData } from '../../lib/useCoordinatorData'
 import { useDocumentTitle } from '../../lib/useDocumentTitle'
+import { formatCalendarDate, getTodayIsoDate } from '../../lib/weekUtils'
 import {
-  formatCalendarDate,
-  formatWeekRange,
-  getTodayIsoDate,
-} from '../../lib/weekUtils'
+  CoordinatorStatusPill,
+  DeleteRecordDialog,
+  InternDetailDialog,
+  SubmissionDetailDialog,
+  SupervisorDetailDialog,
+} from './CoordinatorMonitoringDialogs'
 
-const PRIORITY_META = {
-  high: {
-    label: 'High',
-    className: 'border-error-border/45 bg-error-tint text-error',
-  },
-  medium: {
-    label: 'Medium',
-    className: 'border-accent/35 bg-accent-tint text-accent',
-  },
-  low: {
-    label: 'Low',
-    className: 'border-rule bg-surface-subtle text-ink-muted',
-  },
+const SEVERITY_BADGE_CLASSES = {
+  high: 'border-error-border/45 bg-error-tint text-error',
+  medium: 'border-accent/40 bg-accent-tint text-accent',
+  info: 'border-rule bg-surface-subtle text-ink-muted',
 }
 
-const DEADLINE_TONE_CLASSES = {
-  overdue: 'text-error font-medium',
-  today: 'text-accent font-medium',
-  upcoming: 'text-ink-muted',
-}
-
-function SelectChevronIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 20 20"
-      className="pointer-events-none size-4 text-ink-muted"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.65"
-    >
-      <path d="M5.75 8 10 12.25 14.25 8" strokeLinecap="square" />
-    </svg>
-  )
-}
-
-function getAttentionFlagClass(flag) {
-  const lower = flag.toLowerCase()
-  if (lower.includes('overdue') || lower.includes('returned')) {
-    return 'border-error-border/45 bg-error-tint text-error'
-  }
-  if (lower.includes('pending')) {
-    return 'border-accent/35 bg-accent-tint text-accent'
-  }
-  return 'border-rule bg-surface-subtle text-ink-muted'
-}
-
-function PriorityBadge({ priority }) {
-  const meta = PRIORITY_META[priority] ?? PRIORITY_META.medium
-  return (
-    <span
-      className={`inline-flex items-center rounded-[5px] border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${meta.className}`}
-    >
-      {meta.label}
-    </span>
-  )
-}
-
-function downloadCsvFile(csvContent, filename) {
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  URL.revokeObjectURL(url)
-}
-
-function CoordinatorAttachmentControl({ objectPath }) {
-  const [opening, setOpening] = useState(false)
-  const [signedState, setSignedState] = useState({ path: '', url: '' })
-  const [errorMsg, setErrorMsg] = useState('')
-
-  if (!objectPath) return null
-
-  const displayName = getAttachmentDisplayName(objectPath)
-  const { stem, extension } = splitFilenameForDisplay(displayName)
-  const signedUrl = signedState.path === objectPath ? signedState.url : ''
-
-  async function handleOpen() {
-    if (!supabase) return
-    setOpening(true)
-    setErrorMsg('')
-
-    const { data, error } = await supabase.storage
-      .from('attachments')
-      .createSignedUrl(objectPath, 300)
-
-    setOpening(false)
-
-    if (error || !data?.signedUrl) {
-      setErrorMsg(
-        error?.message || 'Could not generate a signed download link.',
-      )
-      return
-    }
-
-    setSignedState({ path: objectPath, url: data.signedUrl })
-
-    const openedWindow = window.open(
-      data.signedUrl,
-      '_blank',
-      'noopener,noreferrer',
-    )
-    if (!openedWindow) {
-      setErrorMsg(
-        'Pop-up blocked by your browser. Use the direct signed link shown next to the attachment.',
-      )
-    }
-  }
-
-  return (
-    <div className="mt-2 space-y-1">
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <button
-          type="button"
-          disabled={opening}
-          onClick={() => void handleOpen()}
-          className="inline-flex min-h-7 items-center gap-1 font-medium text-accent underline underline-offset-4 hover:text-accent-hover disabled:opacity-60"
-        >
-          <PaperclipIcon className="size-3.5" />
-          <span>
-            {opening ? 'Generating link…' : 'View file'}
-            <span className="visually-hidden"> {displayName}</span>
-          </span>
-        </button>
-        <span className="filename-truncate text-xs text-ink-muted">
-          <span>{stem}</span>
-          {extension}
-        </span>
-        {signedUrl ? (
-          <a
-            href={signedUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-medium text-ink underline underline-offset-2 hover:text-accent"
-          >
-            Open signed link
-            <span className="visually-hidden"> for {displayName}</span>
-          </a>
-        ) : null}
-      </div>
-      {errorMsg ? (
-        <p role="alert" className="text-xs text-error">
-          {errorMsg}
-        </p>
-      ) : null}
-    </div>
-  )
-}
+const MAX_OVERVIEW_ALERTS = 5
+const MAX_RECENT_SUBMISSIONS = 5
 
 export function CoordinatorMonitoringPage() {
   useDocumentTitle('Monitoring')
 
+  const navigate = useNavigate()
+  const todayIso = getTodayIsoDate()
+
   const {
     loading,
     loadError,
-    interns,
     internProgressRows,
-    flaggedInterns,
+    attentionAlerts,
+    supervisorWorkload,
     allSubmissions,
     totals,
-    reportMatrix,
-    reportTotals,
     reload,
   } = useCoordinatorData()
 
-  const todayIso = getTodayIsoDate()
-
-  // Explorer filters
-  const [typeFilter, setTypeFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [internFilter, setInternFilter] = useState('all')
-
-  // Detail & Delete confirmation dialog state
-  const [selectedItem, setSelectedItem] = useState(null)
+  const [selectedIntern, setSelectedIntern] = useState(null)
+  const [selectedSupervisor, setSelectedSupervisor] = useState(null)
+  const [selectedSubmission, setSelectedSubmission] = useState(null)
+  const [allAlertsOpen, setAllAlertsOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
-  const [pageSuccess, setPageSuccess] = useState('')
+  const [actionBanner, setActionBanner] = useState('')
 
-  const filteredSubmissions = useMemo(() => {
-    return allSubmissions.filter((item) => {
-      if (typeFilter !== 'all' && item.kind !== typeFilter) return false
-      if (statusFilter !== 'all' && item.status !== statusFilter) return false
-      if (internFilter !== 'all' && item.internId !== internFilter) return false
-      return true
-    })
-  }, [allSubmissions, internFilter, statusFilter, typeFilter])
+  const priorityAlerts = useMemo(
+    () => attentionAlerts.slice(0, MAX_OVERVIEW_ALERTS),
+    [attentionAlerts],
+  )
 
-  const closeDetailDialog = useCallback(() => {
-    setSelectedItem(null)
-  }, [])
+  const recentSubmissions = useMemo(
+    () => allSubmissions.slice(0, MAX_RECENT_SUBMISSIONS),
+    [allSubmissions],
+  )
 
-  const closeDeleteDialog = useCallback(() => {
-    setDeleteTarget(null)
-    setDeleteError('')
-    setDeleting(false)
-  }, [])
-
-  function handleExportProgress() {
-    const csv = buildProgressReportCsv(internProgressRows)
-    downloadCsvFile(csv, `sip-progress-report-${getTodayIsoDate()}.csv`)
+  function handleAlertAction(alert) {
+    if (alert.actionType === 'view-record' && alert.recordItem) {
+      setAllAlertsOpen(false)
+      setSelectedSubmission(alert.recordItem)
+      return
+    }
+    const foundIntern = internProgressRows.find((i) => i.id === alert.internId)
+    if (foundIntern) {
+      setAllAlertsOpen(false)
+      setSelectedIntern(foundIntern)
+    }
   }
 
-  function handleExportSubmissions() {
-    const csv = buildSubmissionsReportCsv(filteredSubmissions)
-    downloadCsvFile(csv, `sip-submissions-report-${getTodayIsoDate()}.csv`)
+  function handleFilterToIntern(internId) {
+    navigate(`/coordinator/submissions?intern=${encodeURIComponent(internId)}`)
   }
 
-  async function handleConfirmDelete() {
-    if (!supabase || !deleteTarget) return
+  function handleFilterBySupervisor(supervisorId) {
+    navigate(
+      `/coordinator/submissions?supervisor=${encodeURIComponent(supervisorId)}`,
+    )
+  }
+
+  async function handleConfirmDelete(adminReason) {
+    if (!supabase || !deleteTarget || deleteTarget.status === 'approved') return
 
     setDeleting(true)
     setDeleteError('')
 
-    const { data: deletedRows, error } = await supabase
+    const { error } = await supabase
       .from(deleteTarget.tableName)
       .delete()
       .eq('id', deleteTarget.id)
-      .select('id')
+
+    setDeleting(false)
 
     if (error) {
-      setDeleteError(`Could not delete record: ${error.message}`)
-      setDeleting(false)
+      setDeleteError(`Could not remove record: ${error.message}`)
       return
     }
 
-    if (!deletedRows || deletedRows.length === 0) {
-      setDeleteError('This record could not be deleted or was already removed.')
-      setDeleting(false)
-      return
-    }
-
-    const message = `${deleteTarget.typeLabel} record deleted for ${deleteTarget.internName}.`
-    setDeleting(false)
+    const removedLabel = `${deleteTarget.typeLabel} record for ${deleteTarget.internName}`
     setDeleteTarget(null)
-    setSelectedItem(null)
-    setPageSuccess(message)
+    setSelectedSubmission(null)
+    setActionBanner(
+      `Removed ${removedLabel}. Administrative reason: ${adminReason}`,
+    )
     reload()
   }
-
-  const hasActiveFilters =
-    typeFilter !== 'all' || statusFilter !== 'all' || internFilter !== 'all'
-
-  const typeCounts = useMemo(() => {
-    const counts = {
-      all: allSubmissions.length,
-      attendance: 0,
-      accomplishments: 0,
-      tasks: 0,
-    }
-    for (const item of allSubmissions) {
-      if (item.kind in counts) counts[item.kind] += 1
-    }
-    return counts
-  }, [allSubmissions])
-
-  const typeFilterButtons = [
-    { key: 'all', label: 'All', count: typeCounts.all },
-    { key: 'attendance', label: 'Attendance', count: typeCounts.attendance },
-    {
-      key: 'accomplishments',
-      label: 'Accomplishments',
-      count: typeCounts.accomplishments,
-    },
-    { key: 'tasks', label: 'Tasks', count: typeCounts.tasks },
-  ]
 
   return (
     <div className="max-w-6xl space-y-6">
@@ -311,214 +122,244 @@ export function CoordinatorMonitoringPage() {
             Monitoring
           </h1>
           <p className="mt-1.5 max-w-[66ch] text-sm leading-[1.55] text-ink-muted">
-            Monitor intern progress, pending supervisor approvals, submission
-            records, and consolidated program reports.
+            Operational overview of active interns, priority alerts, supervisor
+            workload, and latest submissions.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setPageSuccess('')
-              reload()
-            }}
-            className="inline-flex min-h-10 items-center justify-center rounded-[5px] border border-rule bg-surface px-3.5 text-sm font-medium text-ink hover:bg-surface-subtle"
+          <Link
+            to="/coordinator/submissions"
+            className="inline-flex min-h-10 items-center justify-center rounded-[5px] border border-rule bg-surface px-3.5 text-xs font-medium text-ink hover:bg-surface-subtle"
           >
-            Reload
-          </button>
-          <button
-            type="button"
-            disabled={loading}
-            onClick={handleExportProgress}
-            className="inline-flex min-h-10 items-center justify-center rounded-[5px] bg-accent-solid px-4 text-sm font-medium text-on-accent hover:bg-accent-solid-hover disabled:cursor-not-allowed disabled:opacity-60"
+            Submissions &amp; Reviews
+          </Link>
+          <Link
+            to="/coordinator/reports"
+            className="inline-flex min-h-10 items-center justify-center rounded-[5px] bg-accent-solid px-3.5 text-xs font-medium text-on-accent hover:bg-accent-solid-hover"
           >
-            Export progress report
-          </button>
+            Reports &amp; Analytics
+          </Link>
         </div>
       </header>
 
-      <div className={pageSuccess || loadError ? 'space-y-3' : ''}>
-        <AlertMessage message={pageSuccess} variant="success" />
-        {loadError ? (
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0 flex-1">
-              <AlertMessage message={loadError} variant="error" />
-            </div>
-            <button
-              type="button"
-              onClick={reload}
-              className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-[5px] border border-rule bg-surface px-4 text-sm font-medium text-ink hover:bg-surface-subtle"
-            >
-              Retry
-            </button>
+      {actionBanner ? (
+        <AlertMessage message={actionBanner} variant="success" />
+      ) : null}
+
+      {loadError ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <AlertMessage
+              message={`Could not load monitoring data: ${loadError}`}
+              variant="error"
+            />
           </div>
-        ) : null}
-      </div>
+          <button
+            type="button"
+            onClick={reload}
+            className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-[5px] border border-rule bg-surface px-4 text-sm font-medium text-ink hover:bg-surface-subtle"
+          >
+            Retry
+          </button>
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="flex items-center gap-3 rounded-[6px] border border-rule bg-surface px-5 py-14 text-sm text-ink-muted">
           <progress
-            aria-label="Loading coordinator monitoring data"
+            aria-label="Loading monitoring overview"
             className="loading-spinner"
           />
-          <span>Loading intern progress and submissions…</span>
+          <span>Loading monitoring overview…</span>
         </div>
       ) : (
         <>
-          <section className="overflow-hidden rounded-[6px] border border-rule bg-surface">
-            <dl className="grid grid-cols-2 divide-y divide-rule lg:grid-cols-4 lg:divide-x lg:divide-y-0">
-              <div className="px-5 py-4 max-lg:border-e max-lg:border-rule">
+          {/* 1. Four Overview Statistics */}
+          <section
+            aria-label="Monitoring overview statistics"
+            className="dashboard-metric-wrap overflow-hidden rounded-[6px] border border-rule bg-surface"
+          >
+            <dl className="dashboard-metric-grid">
+              <div className="dashboard-metric-cell">
                 <dt className="text-xs font-medium text-ink-muted">
-                  Total interns
+                  Total Active Interns
                 </dt>
-                <dd className="mt-1 text-xl font-semibold tabular-nums text-ink">
+                <dd className="text-xl font-semibold tabular-nums text-ink">
                   {totals.totalInterns}
                 </dd>
-                <dd className="mt-0.5 text-xs text-ink-muted">
-                  Registered in program
+                <dd className="text-xs tabular-nums text-ink-muted">
+                  {totals.avgProgressPct.toFixed(1)}% avg completion
                 </dd>
               </div>
-              <div className="px-5 py-4">
+              <div className="dashboard-metric-cell">
                 <dt className="text-xs font-medium text-ink-muted">
-                  Pending approvals
+                  Pending Supervisor Reviews
                 </dt>
-                <dd className="mt-1 text-xl font-semibold tabular-nums text-ink">
+                <dd className="text-xl font-semibold tabular-nums text-ink">
                   {totals.totalPendingApprovals}
                 </dd>
-                <dd className="mt-0.5 text-xs text-ink-muted">
-                  Awaiting supervisor review
+                <dd className="text-xs text-ink-muted">
+                  Submitted records awaiting review
                 </dd>
               </div>
-              <div className="px-5 py-4 max-lg:border-e max-lg:border-rule">
+              <div className="dashboard-metric-cell">
                 <dt className="text-xs font-medium text-ink-muted">
-                  Interns needing attention
+                  Interns Needing Attention
                 </dt>
-                <dd className="mt-1 text-xl font-semibold tabular-nums text-ink">
+                <dd
+                  className={`text-xl font-semibold tabular-nums ${
+                    totals.internsNeedingAttention > 0
+                      ? 'text-error'
+                      : 'text-ink'
+                  }`}
+                >
                   {totals.internsNeedingAttention}
                 </dd>
-                <dd className="mt-0.5 text-xs text-ink-muted">
-                  Flagged for follow-up
+                <dd className="text-xs tabular-nums text-ink-muted">
+                  {totals.activeAlertsCount} priority{' '}
+                  {totals.activeAlertsCount === 1 ? 'alert' : 'alerts'}
                 </dd>
               </div>
-              <div className="px-5 py-4">
+              <div className="dashboard-metric-cell">
                 <dt className="text-xs font-medium text-ink-muted">
-                  Total approved hours
+                  Total Approved Hours
                 </dt>
-                <dd className="mt-1 text-xl font-semibold tabular-nums text-ink">
+                <dd className="text-xl font-semibold tabular-nums text-ink">
                   {formatDecimalHours(totals.totalApprovedMinutes)}
                 </dd>
-                <dd className="mt-0.5 text-xs text-ink-muted">
-                  Break-adjusted across interns
+                <dd className="text-xs text-ink-muted">
+                  Approved attendance logs only
                 </dd>
               </div>
             </dl>
           </section>
 
-          <section className="overflow-hidden rounded-[6px] border border-rule bg-surface">
+          {/* 2. Needs Attention Center (Top 5 Priority Alerts + View All) */}
+          <section
+            aria-labelledby="needs-attention-heading"
+            className="overflow-hidden rounded-[6px] border border-rule bg-surface"
+          >
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rule bg-surface-subtle px-5 py-3.5">
               <div>
                 <h2
                   id="needs-attention-heading"
                   className="text-sm font-semibold text-ink"
                 >
-                  Needs attention
+                  Needs Attention Center
                 </h2>
                 <p className="mt-0.5 text-xs text-ink-muted">
-                  Interns with pending approvals, returned items, overdue
-                  unsubmitted tasks, or missing current-week attendance
+                  Up to five highest-priority compliance and review alerts
                 </p>
               </div>
-              <span className="text-xs tabular-nums text-ink-muted">
-                {flaggedInterns.length}{' '}
-                {flaggedInterns.length === 1 ? 'intern' : 'interns'}
-              </span>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-xs tabular-nums text-ink-muted">
+                  Showing {priorityAlerts.length} of {attentionAlerts.length}{' '}
+                  {attentionAlerts.length === 1 ? 'alert' : 'alerts'}
+                </span>
+                {attentionAlerts.length > MAX_OVERVIEW_ALERTS ? (
+                  <button
+                    type="button"
+                    onClick={() => setAllAlertsOpen(true)}
+                    className="inline-flex min-h-8 items-center rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-accent hover:bg-surface-subtle"
+                  >
+                    View All ({attentionAlerts.length})
+                  </button>
+                ) : attentionAlerts.length > 0 ? (
+                  <Link
+                    to="/coordinator/submissions"
+                    className="text-xs font-medium text-accent underline-offset-4 hover:underline"
+                  >
+                    View All in Submissions →
+                  </Link>
+                ) : null}
+              </div>
             </div>
 
-            {flaggedInterns.length === 0 ? (
-              <div className="px-5 py-10 text-sm text-ink-muted">
-                No interns need attention right now.
+            {priorityAlerts.length === 0 ? (
+              <div className="px-5 py-8 text-sm text-ink-muted">
+                All active interns are on track with weekly logs, assigned
+                tasks, and supervisor assignments.
               </div>
             ) : (
-              <div
-                tabIndex={0}
-                role="region"
-                aria-labelledby="needs-attention-heading"
-                className="table-wrapper"
-              >
-                <table className="submission-table is-compact">
-                  <caption className="visually-hidden">
-                    Interns requiring coordinator follow-up
-                  </caption>
-                  <thead>
-                    <tr>
-                      <th scope="col" className="w-52">
-                        Intern
-                      </th>
-                      <th scope="col" className="w-44">
-                        Supervisor
-                      </th>
-                      <th scope="col">Attention flags</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {flaggedInterns.map((intern) => (
-                      <tr key={intern.id}>
-                        <td
-                          data-label="Intern"
-                          className="whitespace-nowrap text-sm font-medium text-ink"
+              <ul className="divide-y divide-rule">
+                {priorityAlerts.map((alert) => (
+                  <li
+                    key={alert.id}
+                    className="flex flex-col gap-3 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`inline-flex items-center rounded-[4px] border px-2 py-0.5 text-[11px] font-semibold ${SEVERITY_BADGE_CLASSES[alert.severity] ?? SEVERITY_BADGE_CLASSES.info}`}
                         >
-                          {intern.full_name}
-                        </td>
-                        <td
-                          data-label="Supervisor"
-                          className="whitespace-nowrap text-sm text-ink-muted"
-                        >
-                          {intern.supervisorName}
-                        </td>
-                        <td data-label="Attention flags">
-                          <ul className="flex flex-wrap gap-1.5">
-                            {intern.attentionFlags.map((flag) => (
-                              <li
-                                key={flag}
-                                className={`inline-flex items-center rounded-[5px] border px-2.5 py-0.5 text-xs font-medium ${getAttentionFlagClass(flag)}`}
-                              >
-                                {flag}
-                              </li>
-                            ))}
-                          </ul>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                          {alert.categoryLabel}
+                        </span>
+                        <span className="text-sm font-medium text-ink">
+                          {alert.internName}
+                        </span>
+                        {alert.studentIdNo ? (
+                          <span className="text-xs tabular-nums text-ink-muted">
+                            ({alert.studentIdNo})
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="text-xs text-ink-muted">{alert.reason}</p>
+                    </div>
+
+                    <div className="flex shrink-0 flex-wrap items-center gap-3">
+                      <span className="text-xs tabular-nums text-ink-muted">
+                        {alert.relevantDate}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleAlertAction(alert)}
+                        className="inline-flex min-h-8 items-center justify-center rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
+                      >
+                        {alert.actionLabel}
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
             )}
           </section>
 
-          <section className="overflow-hidden rounded-[6px] border border-rule bg-surface">
+          {/* 3. Simplified Intern Progress Table */}
+          <section
+            aria-labelledby="intern-progress-heading"
+            className="overflow-hidden rounded-[6px] border border-rule bg-surface"
+          >
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rule bg-surface-subtle px-5 py-3.5">
               <div>
                 <h2
                   id="intern-progress-heading"
                   className="text-sm font-semibold text-ink"
                 >
-                  Intern progress
+                  Intern Progress
                 </h2>
                 <p className="mt-0.5 text-xs text-ink-muted">
-                  Approved break-adjusted hours, required targets, and pending
-                  approval counts across all interns
+                  Essential hours progress and pending approvals per intern
                 </p>
               </div>
-              <span className="text-xs tabular-nums text-ink-muted">
-                {internProgressRows.length}{' '}
-                {internProgressRows.length === 1 ? 'intern' : 'interns'}
-              </span>
+              <Link
+                to="/coordinator/reports"
+                className="text-xs font-medium text-accent underline-offset-4 hover:underline"
+              >
+                Progress analytics &amp; exports →
+              </Link>
             </div>
 
             {internProgressRows.length === 0 ? (
               <div className="px-5 py-10 text-sm text-ink-muted">
-                No interns registered yet.
+                No intern accounts registered yet. Create intern accounts in{' '}
+                <Link
+                  to="/coordinator/accounts"
+                  className="font-medium text-accent underline underline-offset-4"
+                >
+                  Account Management
+                </Link>
+                .
               </div>
             ) : (
               <div
@@ -529,877 +370,436 @@ export function CoordinatorMonitoringPage() {
               >
                 <table className="submission-table is-compact">
                   <caption className="visually-hidden">
-                    All interns ordered by name with approved hours and progress
+                    Simplified intern hours progress overview
                   </caption>
                   <thead>
                     <tr>
                       <th scope="col">Intern</th>
-                      <th scope="col" className="w-40">
-                        Supervisor
-                      </th>
-                      <th scope="col" className="col-num w-32">
-                        Approved hrs
-                      </th>
-                      <th scope="col" className="col-num w-28">
-                        Required hrs
-                      </th>
+                      <th scope="col">Company</th>
+                      <th scope="col">Supervisor</th>
                       <th scope="col" className="w-48">
-                        Progress
+                        Approved Hours &amp; Progress
                       </th>
                       <th scope="col" className="col-num w-24">
                         Pending
                       </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {internProgressRows.map((intern) => {
-                      const academicMeta = [intern.course, intern.school_name]
-                        .filter(Boolean)
-                        .join(' — ')
-
-                      return (
-                        <tr key={intern.id}>
-                          <td data-label="Intern">
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-ink">
-                                {intern.full_name}
-                              </p>
-                              {academicMeta ? (
-                                <p className="mt-0.5 text-xs text-ink-muted">
-                                  {academicMeta}
-                                </p>
-                              ) : null}
-                            </div>
-                          </td>
-                          <td
-                            data-label="Supervisor"
-                            className="whitespace-nowrap text-sm text-ink-muted"
-                          >
-                            {intern.supervisorName}
-                          </td>
-                          <td
-                            data-label="Approved hrs"
-                            className="col-num whitespace-nowrap"
-                          >
-                            <span className="block text-sm font-medium tabular-nums text-ink">
-                              {formatDecimalHours(intern.approvedMinutes)}
-                            </span>
-                            <span className="mt-0.5 block text-xs tabular-nums text-ink-muted">
-                              {formatDurationMinutes(intern.approvedMinutes)}
-                            </span>
-                          </td>
-                          <td
-                            data-label="Required hrs"
-                            className="col-num whitespace-nowrap text-sm tabular-nums text-ink-muted"
-                          >
-                            {intern.requiredHours} hrs
-                          </td>
-                          <td data-label="Progress">
-                            <div className="min-w-[8.5rem] space-y-1.5">
-                              <div className="flex items-baseline justify-between gap-2 text-xs tabular-nums">
-                                <span className="font-semibold text-ink">
-                                  {intern.progressPct.toFixed(1)}%
-                                </span>
-                              </div>
-                              <progress
-                                value={intern.approvedHours}
-                                max={intern.requiredHours}
-                                aria-label={`Internship progress for ${intern.full_name}`}
-                                className={`internship-progress${intern.isComplete ? ' is-complete' : ''}`}
-                              />
-                            </div>
-                          </td>
-                          <td
-                            data-label="Pending"
-                            className={`col-num whitespace-nowrap text-sm tabular-nums ${
-                              intern.pendingCount > 0
-                                ? 'font-semibold text-accent'
-                                : 'text-ink-muted/70'
-                            }`}
-                          >
-                            {intern.pendingCount}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          <section className="overflow-hidden rounded-[6px] border border-rule bg-surface">
-            <div className="flex flex-col gap-3 border-b border-rule bg-surface-subtle px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <h2
-                  id="all-submissions-heading"
-                  className="text-sm font-semibold text-ink"
-                >
-                  All submissions
-                </h2>
-                <p className="mt-0.5 text-xs text-ink-muted">
-                  Click any record to inspect full details, attachments, review
-                  remarks, or delete the record
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2.5">
-                <span className="text-xs tabular-nums text-ink-muted">
-                  Showing {filteredSubmissions.length} of{' '}
-                  {allSubmissions.length}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleExportSubmissions}
-                  className="inline-flex min-h-9 items-center justify-center rounded-[5px] border border-rule bg-surface px-3.5 text-xs font-medium text-ink hover:bg-surface-subtle"
-                >
-                  Export submissions
-                </button>
-              </div>
-            </div>
-
-            <search
-              aria-label="Filter submissions"
-              className="flex flex-col gap-3 border-b border-rule bg-surface px-5 py-3.5 lg:flex-row lg:items-center lg:justify-between"
-            >
-              <div
-                role="group"
-                aria-label="Filter by submission type"
-                className="flex flex-wrap items-center gap-1.5"
-              >
-                {typeFilterButtons.map((btn) => {
-                  const active = typeFilter === btn.key
-                  return (
-                    <button
-                      key={btn.key}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => setTypeFilter(btn.key)}
-                      className={`inline-flex min-h-9 items-center gap-1.5 rounded-[5px] border px-3 text-xs font-medium transition-colors ${
-                        active
-                          ? 'border-accent/45 bg-accent-tint text-accent'
-                          : 'border-rule bg-surface text-ink-muted hover:bg-surface-subtle hover:text-ink'
-                      }`}
-                    >
-                      <span>{btn.label}</span>
-                      <span className="tabular-nums opacity-75">
-                        ({btn.count})
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2.5">
-                <div className="flex items-center gap-2">
-                  <label
-                    htmlFor="monitoring-filter-status"
-                    className="text-xs font-medium text-ink-muted"
-                  >
-                    Status
-                  </label>
-                  <div className="relative flex items-center">
-                    <select
-                      id="monitoring-filter-status"
-                      value={statusFilter}
-                      onChange={(event) => setStatusFilter(event.target.value)}
-                      className="form-control min-h-9 min-w-[8.75rem] appearance-none rounded-[5px] border border-rule bg-surface py-1.5 ps-3 pe-8 text-xs font-medium text-ink transition-colors hover:border-input-border"
-                    >
-                      <option value="all">All statuses</option>
-                      <option value="pending">Pending</option>
-                      <option value="approved">Approved</option>
-                      <option value="returned">Returned</option>
-                      <option value="rejected">Rejected</option>
-                    </select>
-                    <span className="pointer-events-none absolute inset-e-2.5 flex items-center">
-                      <SelectChevronIcon />
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <label
-                    htmlFor="monitoring-filter-intern"
-                    className="text-xs font-medium text-ink-muted"
-                  >
-                    Intern
-                  </label>
-                  <div className="relative flex items-center">
-                    <select
-                      id="monitoring-filter-intern"
-                      value={internFilter}
-                      onChange={(event) => setInternFilter(event.target.value)}
-                      className="form-control min-h-9 min-w-[10.5rem] appearance-none rounded-[5px] border border-rule bg-surface py-1.5 ps-3 pe-8 text-xs font-medium text-ink transition-colors hover:border-input-border"
-                    >
-                      <option value="all">All interns</option>
-                      {interns.map((intern) => (
-                        <option key={intern.id} value={intern.id}>
-                          {intern.full_name}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="pointer-events-none absolute inset-e-2.5 flex items-center">
-                      <SelectChevronIcon />
-                    </span>
-                  </div>
-                </div>
-
-                {hasActiveFilters ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTypeFilter('all')
-                      setStatusFilter('all')
-                      setInternFilter('all')
-                    }}
-                    className="inline-flex min-h-9 items-center justify-center rounded-[5px] border border-rule bg-surface-subtle px-3 text-xs font-medium text-ink hover:bg-surface"
-                  >
-                    Clear
-                  </button>
-                ) : null}
-              </div>
-            </search>
-
-            {filteredSubmissions.length === 0 ? (
-              <div className="px-5 py-10 text-sm text-ink-muted">
-                {allSubmissions.length === 0
-                  ? 'No submission records found yet.'
-                  : 'No submissions match the selected filters.'}
-              </div>
-            ) : (
-              <div
-                tabIndex={0}
-                role="region"
-                aria-labelledby="all-submissions-heading"
-                className="table-wrapper"
-              >
-                <table className="submission-table is-compact">
-                  <caption className="visually-hidden">
-                    Filtered submissions across attendance, accomplishments, and
-                    tasks
-                  </caption>
-                  <thead>
-                    <tr>
-                      <th scope="col" className="whitespace-nowrap">
-                        Intern
-                      </th>
-                      <th scope="col" className="whitespace-nowrap">
-                        Type
-                      </th>
-                      <th scope="col" className="w-full min-w-[16rem]">
-                        Title / summary
-                      </th>
-                      <th scope="col" className="whitespace-nowrap">
-                        Status
-                      </th>
-                      <th scope="col" className="whitespace-nowrap">
-                        Submitted / date
-                      </th>
-                      <th scope="col" className="whitespace-nowrap">
-                        Supervisor
-                      </th>
-                      <th
-                        scope="col"
-                        className="col-action whitespace-nowrap"
-                      >
+                      <th scope="col" className="col-action w-24">
                         Details
                       </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredSubmissions.map((item) => {
-                      const { row } = item
-                      return (
-                        <tr
-                          key={item.key}
-                          onClick={(event) => {
-                            if (event.target.closest('button, a')) return
-                            setSelectedItem(item)
-                          }}
-                          className="cursor-pointer"
+                    {internProgressRows.map((intern) => (
+                      <tr key={intern.id}>
+                        <th scope="row">
+                          <div className="min-w-0">
+                            <p className="font-medium text-ink">
+                              {intern.full_name}
+                            </p>
+                            <p className="mt-0.5 text-xs font-normal tabular-nums text-ink-muted">
+                              {intern.student_id_no || 'No student ID'}
+                            </p>
+                          </div>
+                        </th>
+                        <td
+                          data-label="Company"
+                          className="text-xs text-ink-muted"
                         >
-                          <td
-                            data-label="Intern"
-                            className="whitespace-nowrap text-sm font-medium text-ink"
-                          >
-                            {item.internName}
-                          </td>
-                          <td data-label="Type" className="whitespace-nowrap">
-                            <span className="inline-flex items-center rounded-[4px] border border-rule bg-surface-subtle px-2 py-0.5 text-xs font-medium text-ink-muted">
-                              {item.typeLabel}
-                            </span>
-                          </td>
-                          <td data-label="Title / summary">
-                            {item.kind === 'attendance' ? (
-                              <div className="min-w-0 space-y-0.5">
-                                <p className="text-sm font-medium tabular-nums text-ink">
-                                  {formatCalendarDate(row.attendance_date)}
-                                  <span className="ms-2 font-normal text-ink-muted">
-                                    {formatWallClockTime(row.time_in)} –{' '}
-                                    {formatWallClockTime(row.time_out)}
-                                  </span>
-                                </p>
-                                <p className="text-xs tabular-nums text-ink-muted">
-                                  Rendered{' '}
-                                  {item.renderedMinutes !== null
-                                    ? `${formatDurationMinutes(item.renderedMinutes)} (${formatDecimalHours(item.renderedMinutes)})`
-                                    : '—'}
-                                </p>
-                              </div>
-                            ) : item.kind === 'accomplishments' ? (
-                              <div className="min-w-0 space-y-0.5">
-                                <p className="text-sm font-medium text-ink">
-                                  {row.title}
-                                </p>
-                                <p className="text-xs tabular-nums text-ink-muted">
-                                  Week of {formatWeekRange(row.week_of)}
-                                </p>
-                              </div>
-                            ) : (
-                              <div className="min-w-0 space-y-1">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <p className="text-sm font-medium text-ink">
-                                    {row.title}
-                                  </p>
-                                  <PriorityBadge priority={row.priority} />
-                                </div>
-                                {!item.isSubmittedTask ? (
-                                  <p className="text-xs text-ink-muted">
-                                    Assigned, not yet submitted
-                                  </p>
-                                ) : null}
-                              </div>
-                            )}
-                          </td>
-                          <td data-label="Status" className="whitespace-nowrap">
-                            <StatusBadge status={row.status} />
-                          </td>
-                          <td
-                            data-label="Submitted / date"
-                            className="whitespace-nowrap text-xs tabular-nums text-ink-muted"
-                          >
-                            {item.submittedOrDateIso ? (
-                              <time dateTime={item.submittedOrDateIso}>
-                                {formatCalendarDate(item.submittedOrDateIso)}
-                              </time>
-                            ) : (
-                              '—'
-                            )}
-                          </td>
-                          <td
-                            data-label="Supervisor"
-                            className="whitespace-nowrap text-xs text-ink-muted"
-                          >
-                            {item.supervisorName}
-                          </td>
-                          <td
-                            data-label="Details"
-                            className="col-action whitespace-nowrap"
-                          >
-                            <button
-                              type="button"
-                              onClick={() => setSelectedItem(item)}
-                              className="inline-flex min-h-8 items-center justify-center rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
-                            >
-                              <span>View</span>
-                              <span className="visually-hidden">
-                                {' '}
-                                {item.typeLabel} for {item.internName}
+                          {intern.company_name || '—'}
+                        </td>
+                        <td
+                          data-label="Supervisor"
+                          className="text-xs text-ink-muted"
+                        >
+                          {intern.supervisorName}
+                        </td>
+                        <td data-label="Progress">
+                          <div className="min-w-36 space-y-1">
+                            <div className="flex items-baseline justify-between gap-2 text-xs tabular-nums">
+                              <span className="font-medium text-ink">
+                                {formatDecimalHours(intern.approvedMinutes)} /{' '}
+                                {intern.requiredHours} hrs
                               </span>
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
+                              <span className="font-semibold text-ink">
+                                {intern.progressPct.toFixed(1)}%
+                              </span>
+                            </div>
+                            <progress
+                              value={intern.approvedHours}
+                              max={intern.requiredHours}
+                              aria-label={`Progress for ${intern.full_name}: ${intern.progressPct.toFixed(1)}%`}
+                              className={`internship-progress${intern.isComplete ? ' is-complete' : ''}`}
+                            />
+                          </div>
+                        </td>
+                        <td
+                          data-label="Pending"
+                          className="col-num whitespace-nowrap text-xs font-medium text-ink"
+                        >
+                          {intern.pendingCount}
+                        </td>
+                        <td data-label="Details" className="col-action">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedIntern(intern)}
+                            className="inline-flex min-h-8 items-center justify-center rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
+                          >
+                            Inspect
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
             )}
           </section>
 
-          <section className="overflow-hidden rounded-[6px] border border-rule bg-surface">
+          {/* 4. Compact Supervisor Workload Preview (Section 5) */}
+          <section
+            aria-labelledby="supervisor-workload-heading"
+            className="overflow-hidden rounded-[6px] border border-rule bg-surface"
+          >
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rule bg-surface-subtle px-5 py-3.5">
               <div>
                 <h2
-                  id="consolidated-report-heading"
+                  id="supervisor-workload-heading"
                   className="text-sm font-semibold text-ink"
                 >
-                  Consolidated report
+                  Supervisor Workload
                 </h2>
                 <p className="mt-0.5 text-xs text-ink-muted">
-                  Submission counts across all interns by record type and
-                  approval status
+                  Assigned interns, pending review queues, and average review
+                  turnaround
                 </p>
               </div>
-              <span className="text-xs tabular-nums text-ink-muted">
-                {reportTotals.total}{' '}
-                {reportTotals.total === 1 ? 'record' : 'records'}
-              </span>
+              <div className="flex flex-wrap items-center gap-3">
+                <Link
+                  to="/coordinator/reports"
+                  className="text-xs font-medium text-accent underline-offset-4 hover:underline"
+                >
+                  Performance analytics →
+                </Link>
+                <Link
+                  to="/coordinator/accounts"
+                  className="text-xs font-medium text-ink-muted underline-offset-4 hover:text-ink hover:underline"
+                >
+                  Manage assignments →
+                </Link>
+              </div>
             </div>
 
-            <div
-              tabIndex={0}
-              role="region"
-              aria-labelledby="consolidated-report-heading"
-              className="table-wrapper"
-            >
-              <table className="submission-table is-compact">
-                <caption className="visually-hidden">
-                  Consolidated counts of attendance, accomplishments, and tasks
-                  by approval status
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="col" className="min-w-[10rem]">
-                      Record type
-                    </th>
-                    <th scope="col" className="col-num whitespace-nowrap">
-                      Pending
-                    </th>
-                    <th scope="col" className="col-num whitespace-nowrap">
-                      Assigned, not yet submitted
-                    </th>
-                    <th scope="col" className="col-num whitespace-nowrap">
-                      Approved
-                    </th>
-                    <th scope="col" className="col-num whitespace-nowrap">
-                      Returned
-                    </th>
-                    <th scope="col" className="col-num whitespace-nowrap">
-                      Rejected
-                    </th>
-                    <th scope="col" className="col-num whitespace-nowrap">
-                      Total
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {reportMatrix.map((row) => (
-                    <tr key={row.key}>
-                      <th scope="row" className="text-sm font-medium text-ink">
-                        {row.label}
+            {supervisorWorkload.length === 0 ? (
+              <div className="px-5 py-8 text-sm text-ink-muted">
+                No supervisors registered yet.
+              </div>
+            ) : (
+              <div
+                tabIndex={0}
+                role="region"
+                aria-labelledby="supervisor-workload-heading"
+                className="table-wrapper"
+              >
+                <table className="submission-table is-compact">
+                  <caption className="visually-hidden">
+                    Supervisor review workload summary
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Supervisor</th>
+                      <th scope="col" className="col-num w-32">
+                        Assigned Interns
                       </th>
-                      <td
-                        data-label="Pending"
-                        className={`col-num text-sm ${
-                          row.pending > 0
-                            ? 'font-semibold text-accent'
-                            : 'text-ink-muted/65'
-                        }`}
-                      >
-                        {row.pending}
-                      </td>
-                      <td
-                        data-label="Assigned, not yet submitted"
-                        className={`col-num text-sm ${
-                          row.key === 'tasks' && row.notSubmitted > 0
-                            ? 'font-medium text-ink'
-                            : 'text-ink-muted/65'
-                        }`}
-                      >
-                        {row.key === 'tasks' ? row.notSubmitted : '—'}
-                      </td>
-                      <td
-                        data-label="Approved"
-                        className={`col-num text-sm ${
-                          row.approved > 0
-                            ? 'font-medium text-success'
-                            : 'text-ink-muted/65'
-                        }`}
-                      >
-                        {row.approved}
-                      </td>
-                      <td
-                        data-label="Returned"
-                        className={`col-num text-sm ${
-                          row.returned > 0
-                            ? 'font-medium text-error'
-                            : 'text-ink-muted/65'
-                        }`}
-                      >
-                        {row.returned}
-                      </td>
-                      <td
-                        data-label="Rejected"
-                        className={`col-num text-sm ${
-                          row.rejected > 0
-                            ? 'font-medium text-error'
-                            : 'text-ink-muted/65'
-                        }`}
-                      >
-                        {row.rejected}
-                      </td>
-                      <td
-                        data-label="Total"
-                        className="col-num text-sm font-semibold text-ink"
-                      >
-                        {row.total}
-                      </td>
+                      <th scope="col" className="col-num w-32">
+                        Pending Reviews
+                      </th>
+                      <th scope="col" className="col-num w-28">
+                        Approved
+                      </th>
+                      <th scope="col" className="col-num w-28">
+                        Returned
+                      </th>
+                      <th scope="col" className="col-num w-36">
+                        Avg Review Time
+                      </th>
+                      <th scope="col" className="col-action w-24">
+                        Details
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <th scope="row" className="text-sm font-semibold text-ink">
-                      Totals
-                    </th>
-                    <td
-                      data-label="Pending"
-                      className="col-num text-sm font-semibold text-ink"
-                    >
-                      {reportTotals.pending}
-                    </td>
-                    <td
-                      data-label="Assigned, not yet submitted"
-                      className="col-num text-sm font-semibold text-ink"
-                    >
-                      {reportTotals.notSubmitted}
-                    </td>
-                    <td
-                      data-label="Approved"
-                      className="col-num text-sm font-semibold text-ink"
-                    >
-                      {reportTotals.approved}
-                    </td>
-                    <td
-                      data-label="Returned"
-                      className="col-num text-sm font-semibold text-ink"
-                    >
-                      {reportTotals.returned}
-                    </td>
-                    <td
-                      data-label="Rejected"
-                      className="col-num text-sm font-semibold text-ink"
-                    >
-                      {reportTotals.rejected}
-                    </td>
-                    <td
-                      data-label="Total"
-                      className="col-num text-sm font-semibold text-ink"
-                    >
-                      {reportTotals.total}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
+                  </thead>
+                  <tbody>
+                    {supervisorWorkload.map((sup) => (
+                      <tr key={sup.id}>
+                        <th scope="row">
+                          <div className="min-w-0">
+                            <p className="font-medium text-ink">
+                              {sup.full_name}
+                            </p>
+                            {sup.company_name ? (
+                              <p className="mt-0.5 text-xs font-normal text-ink-muted">
+                                {sup.company_name}
+                              </p>
+                            ) : null}
+                          </div>
+                        </th>
+                        <td
+                          data-label="Assigned Interns"
+                          className="col-num whitespace-nowrap text-xs font-medium text-ink"
+                        >
+                          {sup.assignedInternsCount}
+                        </td>
+                        <td
+                          data-label="Pending Reviews"
+                          className={`col-num whitespace-nowrap text-xs font-semibold ${
+                            sup.pendingReviews > 0 ? 'text-accent' : 'text-ink'
+                          }`}
+                        >
+                          {sup.pendingReviews}
+                        </td>
+                        <td
+                          data-label="Approved"
+                          className="col-num whitespace-nowrap text-xs text-ink-muted"
+                        >
+                          {sup.approvedSubmissions}
+                        </td>
+                        <td
+                          data-label="Returned"
+                          className="col-num whitespace-nowrap text-xs text-ink-muted"
+                        >
+                          {sup.returnedSubmissions}
+                        </td>
+                        <td
+                          data-label="Avg Review Time"
+                          className="col-num whitespace-nowrap text-xs text-ink-muted"
+                        >
+                          {sup.avgReviewTurnaroundLabel}
+                        </td>
+                        <td data-label="Details" className="col-action">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSupervisor(sup)}
+                            className="inline-flex min-h-8 items-center justify-center rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
+                          >
+                            View
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          {/* 5. Recent Submissions Preview (Latest 5 Records Only) */}
+          <section
+            aria-labelledby="recent-submissions-heading"
+            className="overflow-hidden rounded-[6px] border border-rule bg-surface"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rule bg-surface-subtle px-5 py-3.5">
+              <div>
+                <h2
+                  id="recent-submissions-heading"
+                  className="text-sm font-semibold text-ink"
+                >
+                  Recent Submissions
+                </h2>
+                <p className="mt-0.5 text-xs text-ink-muted">
+                  Latest five attendance, accomplishment, and task records
+                </p>
+              </div>
+              <Link
+                to="/coordinator/submissions"
+                className="text-xs font-medium text-accent underline-offset-4 hover:underline"
+              >
+                View all submissions ({allSubmissions.length}) →
+              </Link>
             </div>
+
+            {recentSubmissions.length === 0 ? (
+              <div className="px-5 py-8 text-sm text-ink-muted">
+                No submissions have been recorded yet.
+              </div>
+            ) : (
+              <div
+                tabIndex={0}
+                role="region"
+                aria-labelledby="recent-submissions-heading"
+                className="table-wrapper"
+              >
+                <table className="submission-table is-compact">
+                  <caption className="visually-hidden">
+                    Latest five intern submissions
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Intern</th>
+                      <th scope="col" className="w-32">
+                        Type
+                      </th>
+                      <th scope="col">Summary</th>
+                      <th scope="col" className="w-32">
+                        Date
+                      </th>
+                      <th scope="col" className="w-40">
+                        Status
+                      </th>
+                      <th scope="col" className="col-action w-24">
+                        Details
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentSubmissions.map((item) => (
+                      <tr key={item.key}>
+                        <th scope="row">
+                          <div className="min-w-0">
+                            <p className="font-medium text-ink">
+                              {item.internName}
+                            </p>
+                            <p className="mt-0.5 text-xs font-normal text-ink-muted">
+                              {item.supervisorName}
+                            </p>
+                          </div>
+                        </th>
+                        <td
+                          data-label="Type"
+                          className="whitespace-nowrap text-xs font-medium text-ink-muted"
+                        >
+                          {item.typeLabel}
+                        </td>
+                        <td data-label="Summary">
+                          <p className="text-xs font-medium text-ink">
+                            {item.titleSummary}
+                          </p>
+                          {item.subtitleSummary ? (
+                            <p className="mt-0.5 text-xs text-ink-muted">
+                              {item.subtitleSummary}
+                            </p>
+                          ) : null}
+                        </td>
+                        <td
+                          data-label="Date"
+                          className="whitespace-nowrap text-xs tabular-nums text-ink-muted"
+                        >
+                          {item.submissionDateIso
+                            ? formatCalendarDate(item.submissionDateIso)
+                            : 'Not submitted'}
+                        </td>
+                        <td data-label="Status">
+                          <CoordinatorStatusPill
+                            statusKey={item.displayStatusKey}
+                            compact
+                          />
+                        </td>
+                        <td data-label="Details" className="col-action">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSubmission(item)}
+                            className="inline-flex min-h-8 items-center justify-center rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
+                          >
+                            View
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
         </>
       )}
 
+      {/* All Priority Alerts Modal */}
       <SubmissionDialog
-        open={Boolean(selectedItem)}
-        title={
-          selectedItem
-            ? `${selectedItem.typeLabel} Details — ${selectedItem.internName}`
-            : 'Submission details'
-        }
-        description="Read-only record inspection. Approvals are managed by the assigned supervisor."
-        onClose={closeDetailDialog}
+        open={allAlertsOpen}
+        title={`All Priority Alerts (${attentionAlerts.length})`}
+        description="Complete list of active compliance, assignment, and revision alerts across all interns."
+        onClose={() => setAllAlertsOpen(false)}
       >
-        {selectedItem ? (
-          <div className="space-y-4 text-xs">
-            <dl className="grid grid-cols-1 gap-3 rounded-[5px] border border-rule bg-surface-subtle px-4 py-3 sm:grid-cols-3">
-              <div>
-                <dt className="text-ink-muted">Intern</dt>
-                <dd className="mt-0.5 font-medium text-ink">
-                  {selectedItem.internName}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-ink-muted">Assigned supervisor</dt>
-                <dd className="mt-0.5 font-medium text-ink">
-                  {selectedItem.supervisorName}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-ink-muted">Status</dt>
-                <dd className="mt-0.5">
-                  <StatusBadge status={selectedItem.status} />
-                </dd>
-              </div>
-            </dl>
-
-            <div className="rounded-[5px] border border-rule bg-surface px-4 py-3">
-              {selectedItem.kind === 'attendance' ? (
-                <dl className="space-y-2">
-                  <div className="flex flex-wrap justify-between gap-2">
-                    <dt className="text-ink-muted">Date</dt>
-                    <dd className="font-medium tabular-nums text-ink">
-                      {formatCalendarDate(selectedItem.row.attendance_date)}
-                    </dd>
-                  </div>
-                  <div className="flex flex-wrap justify-between gap-2">
-                    <dt className="text-ink-muted">Week</dt>
-                    <dd className="tabular-nums text-ink">
-                      {formatWeekRange(selectedItem.row.week_of, 5)}
-                    </dd>
-                  </div>
-                  <div className="flex flex-wrap justify-between gap-2">
-                    <dt className="text-ink-muted">Time in / Time out</dt>
-                    <dd className="font-medium tabular-nums text-ink">
-                      {formatWallClockTime(selectedItem.row.time_in)} –{' '}
-                      {formatWallClockTime(selectedItem.row.time_out)}
-                    </dd>
-                  </div>
-                  <div className="flex flex-wrap justify-between gap-2">
-                    <dt className="text-ink-muted">Lunch break</dt>
-                    <dd className="tabular-nums text-ink">
-                      {formatBreakText(selectedItem.row.break_minutes)}
-                    </dd>
-                  </div>
-                  <div className="flex flex-wrap justify-between gap-2 border-t border-rule pt-2">
-                    <dt className="font-medium text-ink">Rendered hours</dt>
-                    <dd className="font-semibold tabular-nums text-ink">
-                      {selectedItem.renderedMinutes !== null
-                        ? `${formatDurationMinutes(selectedItem.renderedMinutes)} (${formatDecimalHours(selectedItem.renderedMinutes)})`
-                        : '—'}
-                    </dd>
-                  </div>
-                </dl>
-              ) : selectedItem.kind === 'accomplishments' ? (
-                <div className="space-y-2.5">
-                  <div>
-                    <p className="text-sm font-semibold text-ink">
-                      {selectedItem.row.title}
-                    </p>
-                    <p className="mt-0.5 tabular-nums text-ink-muted">
-                      Week of {formatWeekRange(selectedItem.row.week_of)}
-                    </p>
-                  </div>
-                  {selectedItem.row.description ? (
-                    <div>
-                      <p className="font-medium text-ink-muted">
-                        Activities performed
-                      </p>
-                      <p className="mt-0.5 whitespace-pre-line text-ink break-words">
-                        {selectedItem.row.description}
-                      </p>
-                    </div>
-                  ) : null}
-                  {selectedItem.row.skills_acquired ? (
-                    <div>
-                      <p className="font-medium text-ink-muted">
-                        Skills acquired
-                      </p>
-                      <p className="mt-0.5 whitespace-pre-line text-ink break-words">
-                        {selectedItem.row.skills_acquired}
-                      </p>
-                    </div>
-                  ) : null}
-                  {selectedItem.row.challenges_encountered ? (
-                    <div>
-                      <p className="font-medium text-ink-muted">
-                        Challenges encountered
-                      </p>
-                      <p className="mt-0.5 whitespace-pre-line text-ink break-words">
-                        {selectedItem.row.challenges_encountered}
-                      </p>
-                    </div>
-                  ) : null}
-                  {selectedItem.row.lessons_learned ? (
-                    <div>
-                      <p className="font-medium text-ink-muted">
-                        Lessons learned
-                      </p>
-                      <p className="mt-0.5 whitespace-pre-line text-ink break-words">
-                        {selectedItem.row.lessons_learned}
-                      </p>
-                    </div>
-                  ) : null}
-                  <CoordinatorAttachmentControl
-                    objectPath={selectedItem.row.attachment_url}
-                  />
-                </div>
-              ) : (
-                <div className="space-y-2.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-ink">
-                      {selectedItem.row.title}
-                    </p>
-                    <PriorityBadge priority={selectedItem.row.priority} />
-                  </div>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 tabular-nums text-ink-muted">
-                    {selectedItem.assignerName ? (
-                      <span>Assigned by {selectedItem.assignerName}</span>
-                    ) : null}
-                    <span>
-                      Deadline:{' '}
-                      <span className="font-medium text-ink">
-                        {formatCalendarDate(
-                          selectedItem.row.deadline ||
-                            selectedItem.row.task_date,
-                        )}
-                      </span>
+        <div className="space-y-4">
+          <ul className="divide-y divide-rule rounded-[5px] border border-rule bg-surface">
+            {attentionAlerts.map((alert) => (
+              <li
+                key={alert.id}
+                className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`inline-flex items-center rounded-[4px] border px-2 py-0.5 text-[11px] font-semibold ${SEVERITY_BADGE_CLASSES[alert.severity] ?? SEVERITY_BADGE_CLASSES.info}`}
+                    >
+                      {alert.categoryLabel}
                     </span>
-                    {selectedItem.row.status === 'pending' &&
-                    (selectedItem.row.deadline || selectedItem.row.task_date) ? (
-                      <span
-                        className={
-                          DEADLINE_TONE_CLASSES[
-                            getDeadlineBadge(
-                              selectedItem.row.deadline ||
-                                selectedItem.row.task_date,
-                              todayIso,
-                            ).tone
-                          ]
-                        }
-                      >
-                        (
-                        {
-                          getDeadlineBadge(
-                            selectedItem.row.deadline ||
-                              selectedItem.row.task_date,
-                            todayIso,
-                          ).label
-                        }
-                        )
-                      </span>
-                    ) : null}
-                    {selectedItem.row.submitted_at ? (
-                      <span>
-                        Submitted on{' '}
-                        {formatCalendarDate(
-                          extractIsoDatePart(selectedItem.row.submitted_at),
-                        )}
-                      </span>
-                    ) : (
-                      <span>Not yet submitted</span>
-                    )}
+                    <span className="text-xs font-semibold text-ink">
+                      {alert.internName}
+                    </span>
                   </div>
-                  {selectedItem.row.description ? (
-                    <div>
-                      <p className="font-medium text-ink-muted">Instructions</p>
-                      <p className="mt-0.5 whitespace-pre-line text-ink break-words">
-                        {selectedItem.row.description}
-                      </p>
-                    </div>
-                  ) : null}
-                  {selectedItem.row.completion_description ? (
-                    <div className="border-t border-rule pt-2">
-                      <p className="font-medium text-ink-muted">
-                        Intern completion notes
-                      </p>
-                      <p className="mt-0.5 whitespace-pre-line text-ink break-words">
-                        {selectedItem.row.completion_description}
-                      </p>
-                    </div>
-                  ) : null}
-                  <CoordinatorAttachmentControl
-                    objectPath={selectedItem.row.submission_attachment_url}
-                  />
+                  <p className="text-xs text-ink-muted">{alert.reason}</p>
                 </div>
-              )}
-            </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="text-xs tabular-nums text-ink-muted">
+                    {alert.relevantDate}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleAlertAction(alert)}
+                    className="inline-flex min-h-7 items-center rounded-[4px] border border-rule bg-surface px-2.5 text-xs font-medium text-ink hover:bg-surface-subtle"
+                  >
+                    {alert.actionLabel}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
 
-            {selectedItem.row.reviewed_at || selectedItem.row.reviewed_by ? (
-              <div className="rounded-[5px] border border-rule bg-surface-subtle px-4 py-3">
-                <p className="font-semibold text-ink">Review details</p>
-                <dl className="mt-2 space-y-1.5">
-                  <div className="flex flex-wrap justify-between gap-2">
-                    <dt className="text-ink-muted">Reviewed by</dt>
-                    <dd className="font-medium text-ink">
-                      {selectedItem.reviewerName || 'Unknown user'}
-                    </dd>
-                  </div>
-                  <div className="flex flex-wrap justify-between gap-2">
-                    <dt className="text-ink-muted">Reviewed at</dt>
-                    <dd className="tabular-nums text-ink">
-                      {selectedItem.row.reviewed_at
-                        ? formatCalendarDate(
-                            extractIsoDatePart(selectedItem.row.reviewed_at),
-                          )
-                        : '—'}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-ink-muted">Remarks</dt>
-                    <dd className="mt-0.5 whitespace-pre-line text-ink break-words">
-                      {selectedItem.row.reviewer_remarks?.trim()
-                        ? selectedItem.row.reviewer_remarks
-                        : '—'}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-            ) : null}
-
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-rule pt-4">
-              <button
-                type="button"
-                onClick={() => {
-                  setDeleteError('')
-                  setDeleteTarget(selectedItem)
-                }}
-                className="inline-flex min-h-10 items-center justify-center rounded-[5px] border border-rejected-border bg-rejected-bg px-3.5 text-sm font-medium text-on-accent hover:opacity-90"
-              >
-                Delete record
-              </button>
-              <button
-                type="button"
-                onClick={closeDetailDialog}
-                className="inline-flex min-h-10 items-center justify-center rounded-[5px] border border-rule bg-surface px-4 text-sm font-medium text-ink hover:bg-surface-subtle"
-              >
-                Close
-              </button>
-            </div>
+          <div className="flex justify-end border-t border-rule pt-4">
+            <button
+              type="button"
+              onClick={() => setAllAlertsOpen(false)}
+              className="inline-flex min-h-9 items-center justify-center rounded-[5px] border border-rule bg-surface px-4 text-xs font-medium text-ink hover:bg-surface-subtle"
+            >
+              Close
+            </button>
           </div>
-        ) : null}
+        </div>
       </SubmissionDialog>
 
-      <SubmissionDialog
-        open={Boolean(deleteTarget)}
-        title="Delete record"
-        description="This action permanently removes the selected submission record."
-        onClose={closeDeleteDialog}
-      >
-        {deleteTarget ? (
-          <div className="space-y-4 text-sm">
-            <div>
-              <AlertMessage message={deleteError} variant="error" />
-            </div>
+      <InternDetailDialog
+        intern={selectedIntern}
+        onClose={() => setSelectedIntern(null)}
+        onSelectSubmission={(item) => setSelectedSubmission(item)}
+        onFilterToIntern={handleFilterToIntern}
+      />
 
-            <p className="text-ink">
-              Are you sure you want to delete{' '}
-              <span className="font-semibold">
-                {deleteTarget.typeLabel}: {deleteTarget.shortTitle}
-              </span>{' '}
-              for <span className="font-semibold">{deleteTarget.internName}</span>
-              ?
-            </p>
+      <SupervisorDetailDialog
+        supervisor={selectedSupervisor}
+        onClose={() => setSelectedSupervisor(null)}
+        onFilterBySupervisor={handleFilterBySupervisor}
+        onInspectIntern={(intern) => setSelectedIntern(intern)}
+      />
 
-            {deleteTarget.kind === 'attendance' &&
-            deleteTarget.status === 'approved' ? (
-              <div
-                role="alert"
-                className="rounded-[5px] border border-error-border bg-error-tint px-4 py-3 text-xs font-medium text-error"
-              >
-                This is an approved attendance record. Deleting it will reduce
-                the intern&apos;s approved hours.
-              </div>
-            ) : null}
+      <SubmissionDetailDialog
+        item={selectedSubmission}
+        todayIso={todayIso}
+        onClose={() => setSelectedSubmission(null)}
+        onRequestDelete={(item) => {
+          setDeleteError('')
+          setDeleteTarget(item)
+        }}
+      />
 
-            <div className="flex flex-wrap items-center justify-end gap-2.5 border-t border-rule pt-4">
-              <button
-                type="button"
-                disabled={deleting}
-                onClick={closeDeleteDialog}
-                className="inline-flex min-h-10 items-center justify-center rounded-[5px] border border-rule bg-surface px-4 text-sm font-medium text-ink hover:bg-surface-subtle disabled:opacity-60"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={deleting}
-                onClick={() => void handleConfirmDelete()}
-                className="inline-flex min-h-10 items-center justify-center rounded-[5px] border border-rejected-border bg-rejected-bg px-4 text-sm font-medium text-on-accent hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {deleting ? 'Deleting…' : 'Delete record'}
-              </button>
-            </div>
-          </div>
-        ) : null}
-      </SubmissionDialog>
+      <DeleteRecordDialog
+        target={deleteTarget}
+        deleting={deleting}
+        errorMessage={deleteError}
+        onClose={() => {
+          setDeleteTarget(null)
+          setDeleteError('')
+        }}
+        onConfirm={(reason) => void handleConfirmDelete(reason)}
+      />
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertMessage } from '../../components/AlertMessage'
 import { FormField } from '../../components/FormField'
 import { EditIcon, NavIcon, PaperclipIcon } from '../../components/Icons'
@@ -48,6 +48,22 @@ const PRIORITY_META = {
   },
 }
 
+function LockIcon({ className = 'size-3.5 shrink-0' }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 20 20"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.65"
+    >
+      <rect x="4.5" y="9" width="11" height="7.5" />
+      <path d="M7 9V6.75a3 3 0 0 1 6 0V9" strokeLinecap="square" />
+    </svg>
+  )
+}
+
 function PriorityBadge({ priority }) {
   const meta = PRIORITY_META[priority] ?? PRIORITY_META.medium
   return (
@@ -79,6 +95,13 @@ function clearFormValidationClasses(form) {
   }
 }
 
+function setFieldInvalidFallback(input, invalid) {
+  if (!input) return
+  input.classList.toggle('user-invalid-fallback', invalid)
+  input.setAttribute('aria-invalid', invalid ? 'true' : 'false')
+  input.closest('.field-group')?.classList.toggle('has-error-fallback', invalid)
+}
+
 function getAssignerName(assignedBy, assignerNames) {
   if (assignedBy && assignerNames[assignedBy]) {
     return assignerNames[assignedBy]
@@ -91,6 +114,13 @@ function extractIsoDatePart(timestamp) {
   return match ? match[1] : ''
 }
 
+function getTaskActionRank(row) {
+  if (row.status === 'approved') return 3
+  if (hasReviewerFeedbackStatus(row.status)) return 0
+  if (!row.submitted_at) return 1
+  return 2
+}
+
 export function TasksPage() {
   useDocumentTitle('Tasks')
 
@@ -99,6 +129,7 @@ export function TasksPage() {
 
   const [listState, setListState] = useState(EMPTY_LIST_STATE)
   const [reloadCounter, setReloadCounter] = useState(0)
+  const [statusFilter, setStatusFilter] = useState('all')
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [activeTask, setActiveTask] = useState(null)
@@ -175,24 +206,60 @@ export function TasksPage() {
   const loadingList = Boolean(
     supabase && currentQueryKey && listState.loadedKey !== currentQueryKey,
   )
-  const items = listState.loadedKey === currentQueryKey ? listState.items : []
-  const assignerNames =
-    listState.loadedKey === currentQueryKey ? listState.assignerNames : {}
-  const listError =
-    attachmentError ||
-    (listState.loadedKey === currentQueryKey ? listState.error : '')
+  const hasLoaded = listState.loadedKey === currentQueryKey
+  const assignerNames = hasLoaded ? listState.assignerNames : {}
+  const listError = attachmentError || (hasLoaded ? listState.error : '')
   const todayIso = getTodayIsoDate()
 
-  const statusCounts = items.reduce(
-    (counts, row) => {
-      if (row.status === 'approved') counts.approved += 1
-      else if (row.status === 'rejected') counts.rejected += 1
-      else if (row.status === 'returned') counts.returned += 1
-      else counts.pending += 1
-      return counts
-    },
-    { pending: 0, returned: 0, rejected: 0, approved: 0 },
-  )
+  const { sortedItems, statusCounts, actionCounts } = useMemo(() => {
+    const rawItems = hasLoaded ? listState.items : []
+
+    const counts = { pending: 0, returned: 0, rejected: 0, approved: 0 }
+    const summary = { toSubmit: 0, awaitingReview: 0 }
+
+    for (const row of rawItems) {
+      if (row.status === 'approved') {
+        counts.approved += 1
+      } else if (row.status === 'rejected') {
+        counts.rejected += 1
+        summary.toSubmit += 1
+      } else if (row.status === 'returned') {
+        counts.returned += 1
+        summary.toSubmit += 1
+      } else {
+        counts.pending += 1
+        if (row.submitted_at) summary.awaitingReview += 1
+        else summary.toSubmit += 1
+      }
+    }
+
+    const ordered = [...rawItems].sort((a, b) => {
+      const rankDiff = getTaskActionRank(a) - getTaskActionRank(b)
+      if (rankDiff !== 0) return rankDiff
+      const dateA = a.deadline || a.task_date || '9999-12-31'
+      const dateB = b.deadline || b.task_date || '9999-12-31'
+      const deadlineDiff = String(dateA).localeCompare(String(dateB))
+      if (deadlineDiff !== 0) return deadlineDiff
+      return String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''))
+    })
+
+    return { sortedItems: ordered, statusCounts: counts, actionCounts: summary }
+  }, [hasLoaded, listState.items])
+
+  const filteredItems = useMemo(() => {
+    if (statusFilter === 'all') return sortedItems
+    return sortedItems.filter((row) => row.status === statusFilter)
+  }, [sortedItems, statusFilter])
+
+  const filterButtons = [
+    { key: 'all', label: 'All', count: sortedItems.length },
+    { key: 'pending', label: 'Pending', count: statusCounts.pending },
+    { key: 'returned', label: 'Returned', count: statusCounts.returned },
+    ...(statusCounts.rejected > 0
+      ? [{ key: 'rejected', label: 'Rejected', count: statusCounts.rejected }]
+      : []),
+    { key: 'approved', label: 'Approved', count: statusCounts.approved },
+  ]
 
   function openSubmissionDialog(row) {
     if (!isEditableSubmissionStatus(row.status)) return
@@ -230,6 +297,7 @@ export function TasksPage() {
     const trimmedCompletion = completionDescription.trim()
     if (!trimmedCompletion) {
       setFormError('Please describe your completed work before submitting.')
+      setFieldInvalidFallback(completionInputRef.current, true)
       completionInputRef.current?.focus()
       return
     }
@@ -326,7 +394,7 @@ export function TasksPage() {
         <h1
           id="main-content"
           tabIndex={-1}
-          className="ledger-title text-[clamp(1.5rem,1.25rem+0.75vw,1.875rem)] font-semibold leading-[1.2] tracking-[-0.02em] text-ink outline-none"
+          className="ledger-title text-[clamp(1.375rem,1.2rem+0.6vw,1.75rem)] font-semibold leading-[1.2] tracking-[-0.02em] text-ink outline-none"
         >
           Assigned Tasks
         </h1>
@@ -341,41 +409,101 @@ export function TasksPage() {
         <AlertMessage message={listError} variant="error" />
       </div>
 
-      <section
-        aria-labelledby="tasks-list-heading"
-        className="overflow-hidden rounded-[6px] border border-rule bg-surface"
-      >
-        <div className="flex flex-col gap-2 border-b border-rule bg-surface-subtle px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      {!loadingList && sortedItems.length > 0 ? (
+        <section className="overflow-hidden rounded-[6px] border border-rule bg-surface">
+          <dl className="grid grid-cols-2 divide-y divide-rule lg:grid-cols-4 lg:divide-x lg:divide-y-0">
+            <div className="px-5 py-4 max-lg:border-e max-lg:border-rule">
+              <dt className="text-xs font-medium text-ink-muted">
+                Total tasks
+              </dt>
+              <dd className="mt-1 text-xl font-semibold tabular-nums text-ink">
+                {sortedItems.length}
+              </dd>
+              <dd className="mt-0.5 text-xs text-ink-muted">
+                Assigned by supervisor
+              </dd>
+            </div>
+            <div className="px-5 py-4">
+              <dt className="text-xs font-medium text-ink-muted">To submit</dt>
+              <dd
+                className={`mt-1 text-xl font-semibold tabular-nums ${
+                  actionCounts.toSubmit > 0 ? 'text-accent' : 'text-ink'
+                }`}
+              >
+                {actionCounts.toSubmit}
+              </dd>
+              <dd className="mt-0.5 text-xs text-ink-muted">
+                {statusCounts.returned + statusCounts.rejected > 0
+                  ? `${statusCounts.returned + statusCounts.rejected} returned for revision`
+                  : 'Action needed from you'}
+              </dd>
+            </div>
+            <div className="px-5 py-4 max-lg:border-e max-lg:border-rule">
+              <dt className="text-xs font-medium text-ink-muted">
+                Awaiting review
+              </dt>
+              <dd className="mt-1 text-xl font-semibold tabular-nums text-ink">
+                {actionCounts.awaitingReview}
+              </dd>
+              <dd className="mt-0.5 text-xs text-ink-muted">
+                Submitted to supervisor
+              </dd>
+            </div>
+            <div className="px-5 py-4">
+              <dt className="text-xs font-medium text-ink-muted">Approved</dt>
+              <dd className="mt-1 text-xl font-semibold tabular-nums text-ink">
+                {statusCounts.approved}
+              </dd>
+              <dd className="mt-0.5 text-xs text-ink-muted">
+                Completed and locked
+              </dd>
+            </div>
+          </dl>
+        </section>
+      ) : null}
+
+      <section className="overflow-hidden rounded-[6px] border border-rule bg-surface">
+        <div className="flex flex-col gap-3 border-b border-rule bg-surface-subtle px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2
               id="tasks-list-heading"
-              className="text-base font-semibold text-ink"
+              className="text-sm font-semibold text-ink"
             >
               Tasks assigned to you
             </h2>
             <p className="mt-0.5 text-xs text-ink-muted">
-              Ordered by nearest deadline first.
+              Actionable tasks first by nearest deadline, followed by completed
+              tasks.
             </p>
           </div>
 
-          {!loadingList && items.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs tabular-nums text-ink-muted">
-              <span className="font-medium text-ink">
-                {items.length} {items.length === 1 ? 'task' : 'tasks'}
-              </span>
-              <span aria-hidden="true" className="h-3 w-px bg-rule" />
-              <span>{statusCounts.pending} pending</span>
-              <span aria-hidden="true" className="h-3 w-px bg-rule" />
-              <span>{statusCounts.returned} returned</span>
-              {statusCounts.rejected > 0 ? (
-                <>
-                  <span aria-hidden="true" className="h-3 w-px bg-rule" />
-                  <span>{statusCounts.rejected} rejected</span>
-                </>
-              ) : null}
-              <span aria-hidden="true" className="h-3 w-px bg-rule" />
-              <span>{statusCounts.approved} approved</span>
-            </div>
+          {!loadingList && sortedItems.length > 0 ? (
+            <search
+              aria-label="Filter assigned tasks by status"
+              className="flex flex-wrap items-center gap-1.5"
+            >
+              {filterButtons.map((btn) => {
+                const active = statusFilter === btn.key
+                return (
+                  <button
+                    key={btn.key}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setStatusFilter(btn.key)}
+                    className={`inline-flex min-h-9 items-center gap-1.5 rounded-[5px] border px-3 text-xs font-medium transition-colors ${
+                      active
+                        ? 'border-accent/45 bg-accent-tint text-accent'
+                        : 'border-rule bg-surface text-ink-muted hover:bg-surface-subtle hover:text-ink'
+                    }`}
+                  >
+                    <span>{btn.label}</span>
+                    <span className="tabular-nums opacity-75">
+                      ({btn.count})
+                    </span>
+                  </button>
+                )
+              })}
+            </search>
           ) : null}
         </div>
 
@@ -384,7 +512,7 @@ export function TasksPage() {
             <progress aria-label="Loading tasks" className="loading-spinner" />
             <span>Loading assigned tasks…</span>
           </div>
-        ) : items.length === 0 ? (
+        ) : sortedItems.length === 0 ? (
           <div className="flex items-start gap-3.5 px-5 py-12">
             <span className="mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-[5px] border border-rule bg-surface-subtle text-ink-muted">
               <NavIcon name="tasks" className="size-4" />
@@ -398,6 +526,10 @@ export function TasksPage() {
               </p>
             </div>
           </div>
+        ) : filteredItems.length === 0 ? (
+          <div className="px-5 py-10 text-sm text-ink-muted">
+            No {statusFilter} tasks found.
+          </div>
         ) : (
           <div
             tabIndex={0}
@@ -405,29 +537,31 @@ export function TasksPage() {
             aria-labelledby="tasks-list-heading"
             className="table-wrapper"
           >
-            <table className="submission-table">
+            <table className="submission-table is-compact">
               <caption className="visually-hidden">
                 Supervisor-assigned tasks and completion submission status
               </caption>
               <thead>
                 <tr>
-                  <th scope="col">Task & instructions</th>
-                  <th scope="col" className="w-36">
+                  <th scope="col" className="w-full min-w-[18rem]">
+                    Task & instructions
+                  </th>
+                  <th scope="col" className="whitespace-nowrap">
                     Deadline
                   </th>
-                  <th scope="col" className="w-28">
+                  <th scope="col" className="whitespace-nowrap">
                     Priority
                   </th>
-                  <th scope="col" className="w-36">
+                  <th scope="col" className="whitespace-nowrap">
                     Status
                   </th>
-                  <th scope="col" className="col-action w-36">
+                  <th scope="col" className="col-action whitespace-nowrap">
                     Action
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((row) => {
+                {filteredItems.map((row) => {
                   const editable = isEditableSubmissionStatus(row.status)
                   const effectiveDeadline = row.deadline || row.task_date
                   const assignerName = getAssignerName(
@@ -443,30 +577,39 @@ export function TasksPage() {
                     : null
                   const submittedDateIso = extractIsoDatePart(row.submitted_at)
                   const signedUrl = signedUrlsById[row.id]
+                  const needsAction =
+                    editable &&
+                    (!row.submitted_at || hasReviewerFeedbackStatus(row.status))
                   const actionLabel = hasReviewerFeedbackStatus(row.status)
                     ? 'Resubmit'
                     : row.submitted_at
                       ? 'Edit submission'
                       : 'Submit work'
+                  const attachmentName = getAttachmentDisplayName(
+                    row.submission_attachment_url,
+                  )
 
                   return (
                     <tr key={row.id}>
                       <td data-label="Task & instructions">
-                        <div className="min-w-0">
-                          <p className="font-medium text-ink">{row.title}</p>
+                        <div className="min-w-0 max-w-[60ch]">
+                          <p className="text-sm font-semibold leading-snug text-ink">
+                            {row.title}
+                          </p>
+                          <p className="mt-0.5 text-xs text-ink-muted">
+                            Assigned by {assignerName}
+                          </p>
+
                           {row.description ? (
-                            <p className="mt-1 max-w-[60ch] whitespace-pre-line text-sm text-ink-muted break-words">
+                            <p className="mt-2 whitespace-pre-line text-sm leading-[1.55] text-ink-muted text-pretty break-words">
                               {row.description}
                             </p>
                           ) : null}
-                          <p className="mt-1 text-xs text-ink-muted">
-                            Assigned by {assignerName}
-                          </p>
 
                           {row.completion_description ||
                           row.submission_attachment_url ||
                           row.submitted_at ? (
-                            <div className="mt-2.5 rounded-[5px] border border-rule bg-surface-subtle px-3 py-2 text-xs">
+                            <div className="mt-3 rounded-e-[5px] border-s-2 border-accent/45 bg-surface-subtle/80 px-3.5 py-2.5 text-xs">
                               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
                                 <p className="font-semibold text-ink">
                                   Your submission
@@ -481,7 +624,7 @@ export function TasksPage() {
                                 ) : null}
                               </div>
                               {row.completion_description ? (
-                                <p className="mt-1 whitespace-pre-line text-ink-muted break-words">
+                                <p className="mt-1 whitespace-pre-line leading-[1.5] text-ink-muted text-pretty break-words">
                                   {row.completion_description}
                                 </p>
                               ) : null}
@@ -498,6 +641,10 @@ export function TasksPage() {
                                       {openingId === row.id
                                         ? 'Generating link…'
                                         : 'View attachment'}
+                                      <span className="visually-hidden">
+                                        {' '}
+                                        {attachmentName} for {row.title}
+                                      </span>
                                     </span>
                                   </button>
                                   <FileNameLabel
@@ -511,6 +658,10 @@ export function TasksPage() {
                                       className="font-medium text-ink underline underline-offset-2 hover:text-accent"
                                     >
                                       Open signed link
+                                      <span className="visually-hidden">
+                                        {' '}
+                                        for {row.title}
+                                      </span>
                                     </a>
                                   ) : null}
                                 </div>
@@ -549,21 +700,32 @@ export function TasksPage() {
                         <PriorityBadge priority={row.priority} />
                       </td>
 
-                      <td data-label="Status">
+                      <td data-label="Status" className="whitespace-nowrap">
                         <div className="flex flex-col items-start gap-1">
                           <StatusBadge status={row.status} />
-                          <span className="text-[0.6875rem] text-ink-muted">
-                            {row.submitted_at ? 'Submitted' : 'Not submitted'}
-                          </span>
+                          {row.status === 'pending' ? (
+                            <span className="text-xs text-ink-muted">
+                              {row.submitted_at
+                                ? 'Awaiting review'
+                                : 'Not submitted'}
+                            </span>
+                          ) : null}
                         </div>
                       </td>
 
-                      <td data-label="Action" className="col-action">
+                      <td
+                        data-label="Action"
+                        className="col-action whitespace-nowrap"
+                      >
                         {editable ? (
                           <button
                             type="button"
                             onClick={() => openSubmissionDialog(row)}
-                            className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
+                            className={`inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 rounded-[5px] px-3.5 text-xs font-medium whitespace-nowrap transition-colors ${
+                              needsAction
+                                ? 'bg-accent-solid text-on-accent hover:bg-accent-solid-hover'
+                                : 'border border-rule bg-surface text-ink hover:bg-surface-subtle'
+                            }`}
                           >
                             <EditIcon className="size-3.5" />
                             <span>{actionLabel}</span>
@@ -573,7 +735,10 @@ export function TasksPage() {
                             </span>
                           </button>
                         ) : (
-                          <span className="text-xs text-ink-muted">Locked</span>
+                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-muted">
+                            <LockIcon className="size-3.5" />
+                            <span>Locked</span>
+                          </span>
                         )}
                       </td>
                     </tr>
@@ -610,7 +775,7 @@ export function TasksPage() {
               <PriorityBadge priority={activeTask.priority} />
             </div>
             {activeTask.description ? (
-              <p className="mt-1.5 whitespace-pre-line text-ink-muted">
+              <p className="mt-1.5 whitespace-pre-line text-ink-muted text-pretty">
                 {activeTask.description}
               </p>
             ) : null}
@@ -640,7 +805,9 @@ export function TasksPage() {
 
         <form
           ref={formRef}
+          aria-label="Task completion"
           onSubmit={handleSubmitCompletion}
+          noValidate
           className="space-y-4"
         >
           <FormField
@@ -657,6 +824,7 @@ export function TasksPage() {
             value={completionDescription}
             onChange={(event) => {
               setCompletionDescription(event.target.value)
+              setFieldInvalidFallback(completionInputRef.current, false)
               if (formError) setFormError('')
             }}
           />

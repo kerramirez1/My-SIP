@@ -4,8 +4,13 @@ import { AuthProvider } from './context/AuthContext'
 import { AuthLayout } from './layouts/AuthLayout'
 import { DashboardLayout } from './layouts/DashboardLayout'
 import { LoginPage } from './pages/auth/LoginPage'
+import { CoordinatorAccountsPage } from './pages/coordinator/CoordinatorAccountsPage'
 import { CoordinatorDashboard } from './pages/coordinator/CoordinatorDashboard'
 import { CoordinatorMonitoringPage } from './pages/coordinator/CoordinatorMonitoringPage'
+import { CoordinatorProfilePage } from './pages/coordinator/CoordinatorProfilePage'
+import { CoordinatorReportsPage } from './pages/coordinator/CoordinatorReportsPage'
+import { CoordinatorSettingsPage } from './pages/coordinator/CoordinatorSettingsPage'
+import { CoordinatorSubmissionsPage } from './pages/coordinator/CoordinatorSubmissionsPage'
 import { AccomplishmentsPage } from './pages/intern/AccomplishmentsPage'
 import { InternDashboard } from './pages/intern/InternDashboard'
 import { InternProfilePage } from './pages/intern/InternProfilePage'
@@ -63,8 +68,28 @@ export function App() {
             <Route element={<DashboardLayout />}>
               <Route path="/coordinator" element={<CoordinatorDashboard />} />
               <Route
+                path="/coordinator/accounts"
+                element={<CoordinatorAccountsPage />}
+              />
+              <Route
                 path="/coordinator/monitoring"
                 element={<CoordinatorMonitoringPage />}
+              />
+              <Route
+                path="/coordinator/submissions"
+                element={<CoordinatorSubmissionsPage />}
+              />
+              <Route
+                path="/coordinator/reports"
+                element={<CoordinatorReportsPage />}
+              />
+              <Route
+                path="/coordinator/profile"
+                element={<CoordinatorProfilePage />}
+              />
+              <Route
+                path="/coordinator/settings"
+                element={<CoordinatorSettingsPage />}
               />
             </Route>
           </Route>
