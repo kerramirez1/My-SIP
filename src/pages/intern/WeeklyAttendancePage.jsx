@@ -78,6 +78,30 @@ function clearFormValidationClasses(form) {
   }
 }
 
+function setFieldInvalidFallback(input, invalid) {
+  if (!input) return
+  input.classList.toggle('user-invalid-fallback', invalid)
+  input.setAttribute('aria-invalid', invalid ? 'true' : 'false')
+  input.closest('.field-group')?.classList.toggle('has-error-fallback', invalid)
+}
+
+function parseBreakMinutesInput(rawValue) {
+  const text = String(rawValue ?? '').trim()
+  if (text === '' || !/^-?\d+$/.test(text)) {
+    return { valid: false, value: null }
+  }
+  const parsed = Number(text)
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 240) {
+    return { valid: false, value: parsed }
+  }
+  return { valid: true, value: parsed }
+}
+
+function formatBreakLabel(breakMinutes) {
+  const safeBreak = breakMinutes ?? DEFAULT_BREAK_MINUTES
+  return safeBreak === 0 ? 'No break' : `Break: ${safeBreak} min`
+}
+
 export function WeeklyAttendancePage() {
   useDocumentTitle('Weekly Attendance')
 
@@ -97,6 +121,7 @@ export function WeeklyAttendancePage() {
   const [attendanceDate, setAttendanceDate] = useState(initialToday)
   const [timeIn, setTimeIn] = useState('08:00')
   const [timeOut, setTimeOut] = useState('17:00')
+  const [breakMinutes, setBreakMinutes] = useState(String(DEFAULT_BREAK_MINUTES))
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
   const [pageSuccess, setPageSuccess] = useState('')
@@ -104,21 +129,27 @@ export function WeeklyAttendancePage() {
   const formRef = useRef(null)
   const dateInputRef = useRef(null)
   const timeOutInputRef = useRef(null)
+  const breakInputRef = useRef(null)
 
   useFormValidationSync(formRef)
 
   const formWeekOf = getMondayOfWeek(attendanceDate)
-  const activeBreakMinutes = editingRow?.break_minutes ?? DEFAULT_BREAK_MINUTES
+  const parsedBreak = parseBreakMinutesInput(breakMinutes)
   const rawPreviewMinutes = computeElapsedMinutes(timeIn, timeOut, 0)
-  const previewMinutes = computeElapsedMinutes(
-    timeIn,
-    timeOut,
-    activeBreakMinutes,
-  )
   const isTimeRangeInvalid =
     Boolean(timeIn && timeOut) &&
     rawPreviewMinutes !== null &&
     rawPreviewMinutes < 0
+  const isBreakTooLong =
+    !isTimeRangeInvalid &&
+    parsedBreak.valid &&
+    rawPreviewMinutes !== null &&
+    ((rawPreviewMinutes > 0 && parsedBreak.value >= rawPreviewMinutes) ||
+      (rawPreviewMinutes === 0 && parsedBreak.value > 0))
+  const previewMinutes =
+    parsedBreak.valid && !isTimeRangeInvalid && !isBreakTooLong
+      ? computeElapsedMinutes(timeIn, timeOut, parsedBreak.value)
+      : null
 
   const currentQueryKey =
     internId && selectedWeekOf
@@ -183,6 +214,7 @@ export function WeeklyAttendancePage() {
     setAttendanceDate(targetDate)
     setTimeIn('08:00')
     setTimeOut('17:00')
+    setBreakMinutes(String(DEFAULT_BREAK_MINUTES))
     setFormError('')
     clearFormValidationClasses(formRef.current)
   }
@@ -199,6 +231,7 @@ export function WeeklyAttendancePage() {
     setAttendanceDate(row.attendance_date)
     setTimeIn(toTimeInputValue(row.time_in))
     setTimeOut(toTimeInputValue(row.time_out))
+    setBreakMinutes(String(row.break_minutes ?? DEFAULT_BREAK_MINUTES))
     setFormError('')
     clearFormValidationClasses(formRef.current)
     setDialogOpen(true)
@@ -243,7 +276,28 @@ export function WeeklyAttendancePage() {
 
     if (elapsedMinutes < 0) {
       setFormError('Time out cannot be earlier than time in.')
+      setFieldInvalidFallback(timeOutInputRef.current, true)
       timeOutInputRef.current?.focus()
+      return
+    }
+
+    const breakCheck = parseBreakMinutesInput(breakMinutes)
+    if (!breakCheck.valid) {
+      setFormError('Lunch break must be a whole number from 0 to 240 minutes.')
+      setFieldInvalidFallback(breakInputRef.current, true)
+      breakInputRef.current?.focus()
+      return
+    }
+
+    if (
+      (elapsedMinutes > 0 && breakCheck.value >= elapsedMinutes) ||
+      (elapsedMinutes === 0 && breakCheck.value > 0)
+    ) {
+      setFormError(
+        'Lunch break cannot be longer than the time between time in and time out.',
+      )
+      setFieldInvalidFallback(breakInputRef.current, true)
+      breakInputRef.current?.focus()
       return
     }
 
@@ -264,6 +318,7 @@ export function WeeklyAttendancePage() {
           attendance_date: attendanceDate,
           time_in: timeIn,
           time_out: timeOut,
+          break_minutes: breakCheck.value,
           week_of: formWeekOf,
           ...getReviewResetPayload(editingRow.status),
         })
@@ -294,6 +349,7 @@ export function WeeklyAttendancePage() {
           attendance_date: attendanceDate,
           time_in: timeIn,
           time_out: timeOut,
+          break_minutes: breakCheck.value,
           week_of: formWeekOf,
           status: 'pending',
         })
@@ -573,11 +629,15 @@ export function WeeklyAttendancePage() {
                         {formatWallClockTime(row.time_in)}
                       </td>
 
-                      <td
-                        data-label="Time Out"
-                        className="whitespace-nowrap text-sm tabular-nums text-ink"
-                      >
-                        {formatWallClockTime(row.time_out)}
+                      <td data-label="Time Out" className="whitespace-nowrap">
+                        <div className="flex flex-col">
+                          <span className="text-sm tabular-nums text-ink">
+                            {formatWallClockTime(row.time_out)}
+                          </span>
+                          <span className="mt-0.5 text-xs tabular-nums text-ink-muted">
+                            {formatBreakLabel(row.break_minutes)}
+                          </span>
+                        </div>
                       </td>
 
                       <td data-label="Hours" className="whitespace-nowrap">
@@ -649,7 +709,12 @@ export function WeeklyAttendancePage() {
           <AlertMessage message={formError} variant="error" />
         </div>
 
-        <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
+        <form
+          ref={formRef}
+          onSubmit={handleSubmit}
+          noValidate
+          className="space-y-4"
+        >
           <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[11.5rem_1fr]">
             <FormField
               inputRef={dateInputRef}
@@ -688,6 +753,8 @@ export function WeeklyAttendancePage() {
               value={timeIn}
               onChange={(event) => {
                 setTimeIn(event.target.value)
+                setFieldInvalidFallback(timeOutInputRef.current, false)
+                setFieldInvalidFallback(breakInputRef.current, false)
                 if (formError) setFormError('')
               }}
             />
@@ -708,18 +775,55 @@ export function WeeklyAttendancePage() {
               value={timeOut}
               onChange={(event) => {
                 setTimeOut(event.target.value)
+                setFieldInvalidFallback(timeOutInputRef.current, false)
+                setFieldInvalidFallback(breakInputRef.current, false)
                 if (formError) setFormError('')
               }}
             />
           </div>
 
-          <div className="flex items-center justify-between rounded-[5px] border border-rule bg-surface-subtle px-3.5 py-2.5 text-xs">
+          <FormField
+            inputRef={breakInputRef}
+            id="attendance-break-minutes"
+            name="break_minutes"
+            label="Lunch break (minutes)"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={240}
+            step={5}
+            required
+            hint="Enter 0 if you took no break. The usual lunch break is 60."
+            validationMessage={
+              isBreakTooLong
+                ? 'Lunch break cannot be longer than the time between time in and time out.'
+                : 'Lunch break must be a whole number from 0 to 240 minutes.'
+            }
+            value={breakMinutes}
+            onChange={(event) => {
+              setBreakMinutes(event.target.value)
+              setFieldInvalidFallback(breakInputRef.current, false)
+              if (formError) setFormError('')
+            }}
+          />
+
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-[5px] border border-rule bg-surface-subtle px-3.5 py-2.5 text-xs">
             <span className="font-medium text-ink-muted">
-              Rendered hours ({activeBreakMinutes} min break deducted)
+              {parsedBreak.valid
+                ? `Rendered hours (${parsedBreak.value} min break deducted)`
+                : 'Rendered hours'}
             </span>
             {isTimeRangeInvalid ? (
               <span className="font-medium text-error">
                 Time out cannot be earlier than time in
+              </span>
+            ) : !parsedBreak.valid ? (
+              <span className="font-medium text-error">
+                Enter a whole number from 0 to 240 minutes
+              </span>
+            ) : isBreakTooLong ? (
+              <span className="font-medium text-error">
+                Break cannot be longer than shift duration
               </span>
             ) : previewMinutes !== null ? (
               <span className="font-semibold tabular-nums text-ink">
