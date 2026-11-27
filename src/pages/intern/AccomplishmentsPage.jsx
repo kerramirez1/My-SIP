@@ -76,6 +76,9 @@ export function AccomplishmentsPage() {
   const [formDate, setFormDate] = useState(initialToday)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [skillsAcquired, setSkillsAcquired] = useState('')
+  const [challengesEncountered, setChallengesEncountered] = useState('')
+  const [lessonsLearned, setLessonsLearned] = useState('')
   const [selectedFile, setSelectedFile] = useState(null)
   const [removeExistingAttachment, setRemoveExistingAttachment] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -106,7 +109,7 @@ export function AccomplishmentsPage() {
     supabase
       .from('accomplishments')
       .select(
-        'id, intern_id, week_of, title, description, attachment_url, status, reviewed_by, reviewer_remarks, reviewed_at, created_at',
+        'id, intern_id, week_of, title, description, skills_acquired, challenges_encountered, lessons_learned, attachment_url, status, reviewed_by, reviewer_remarks, reviewed_at, created_at',
       )
       .eq('intern_id', internId)
       .eq('week_of', selectedWeekOf)
@@ -149,6 +152,9 @@ export function AccomplishmentsPage() {
     setFormDate(targetDate)
     setTitle('')
     setDescription('')
+    setSkillsAcquired('')
+    setChallengesEncountered('')
+    setLessonsLearned('')
     setSelectedFile(null)
     setRemoveExistingAttachment(false)
     setFormError('')
@@ -170,6 +176,9 @@ export function AccomplishmentsPage() {
     setFormDate(row.week_of)
     setTitle(row.title ?? '')
     setDescription(row.description ?? '')
+    setSkillsAcquired(row.skills_acquired ?? '')
+    setChallengesEncountered(row.challenges_encountered ?? '')
+    setLessonsLearned(row.lessons_learned ?? '')
     setSelectedFile(null)
     setRemoveExistingAttachment(false)
     setFormError('')
@@ -203,6 +212,9 @@ export function AccomplishmentsPage() {
 
     const trimmedTitle = title.trim()
     const trimmedDescription = description.trim()
+    const trimmedSkills = skillsAcquired.trim()
+    const trimmedChallenges = challengesEncountered.trim()
+    const trimmedLessons = lessonsLearned.trim()
     if (!trimmedTitle) {
       setFormError('Please enter a title for this accomplishment.')
       titleInputRef.current?.focus()
@@ -252,6 +264,9 @@ export function AccomplishmentsPage() {
           week_of: formWeekOf,
           title: trimmedTitle,
           description: trimmedDescription || null,
+          skills_acquired: trimmedSkills || null,
+          challenges_encountered: trimmedChallenges || null,
+          lessons_learned: trimmedLessons || null,
           attachment_url: nextAttachmentPath,
           ...getReviewResetPayload(editingRow.status),
         })
@@ -278,6 +293,9 @@ export function AccomplishmentsPage() {
           week_of: formWeekOf,
           title: trimmedTitle,
           description: trimmedDescription || null,
+          skills_acquired: trimmedSkills || null,
+          challenges_encountered: trimmedChallenges || null,
+          lessons_learned: trimmedLessons || null,
           attachment_url: nextAttachmentPath,
         })
 
@@ -538,6 +556,42 @@ export function AccomplishmentsPage() {
                               {row.description}
                             </p>
                           ) : null}
+                          {row.skills_acquired ||
+                          row.challenges_encountered ||
+                          row.lessons_learned ? (
+                            <dl className="mt-2.5 space-y-2 border-t border-rule/70 pt-2.5">
+                              {row.skills_acquired ? (
+                                <div>
+                                  <dt className="text-xs font-medium text-ink-muted">
+                                    Skills acquired
+                                  </dt>
+                                  <dd className="mt-0.5 max-w-[60ch] whitespace-pre-line text-sm text-ink break-words">
+                                    {row.skills_acquired}
+                                  </dd>
+                                </div>
+                              ) : null}
+                              {row.challenges_encountered ? (
+                                <div>
+                                  <dt className="text-xs font-medium text-ink-muted">
+                                    Challenges encountered
+                                  </dt>
+                                  <dd className="mt-0.5 max-w-[60ch] whitespace-pre-line text-sm text-ink break-words">
+                                    {row.challenges_encountered}
+                                  </dd>
+                                </div>
+                              ) : null}
+                              {row.lessons_learned ? (
+                                <div>
+                                  <dt className="text-xs font-medium text-ink-muted">
+                                    Lessons learned
+                                  </dt>
+                                  <dd className="mt-0.5 max-w-[60ch] whitespace-pre-line text-sm text-ink break-words">
+                                    {row.lessons_learned}
+                                  </dd>
+                                </div>
+                              ) : null}
+                            </dl>
+                          ) : null}
                           {hasReviewerFeedbackStatus(row.status) ? (
                             <ReturnedRemarks
                               remarks={row.reviewer_remarks}
@@ -671,13 +725,55 @@ export function AccomplishmentsPage() {
           <FormField
             id="accomplishment-description"
             name="description"
-            label="Description"
+            label="Activities performed"
             multiline
             rows={3}
-            placeholder="Summarize completed deliverables and outcomes for the week."
+            placeholder="List the activities you performed and the work you completed for this week."
             value={description}
             onChange={(event) => {
               setDescription(event.target.value)
+              if (formError) setFormError('')
+            }}
+          />
+
+          <FormField
+            id="accomplishment-skills-acquired"
+            name="skills_acquired"
+            label="Skills acquired"
+            multiline
+            rows={3}
+            placeholder="Skills you learned or improved this week."
+            value={skillsAcquired}
+            onChange={(event) => {
+              setSkillsAcquired(event.target.value)
+              if (formError) setFormError('')
+            }}
+          />
+
+          <FormField
+            id="accomplishment-challenges-encountered"
+            name="challenges_encountered"
+            label="Challenges encountered"
+            multiline
+            rows={3}
+            placeholder="Problems or difficulties you encountered."
+            value={challengesEncountered}
+            onChange={(event) => {
+              setChallengesEncountered(event.target.value)
+              if (formError) setFormError('')
+            }}
+          />
+
+          <FormField
+            id="accomplishment-lessons-learned"
+            name="lessons_learned"
+            label="Lessons learned"
+            multiline
+            rows={3}
+            placeholder="What you learned from the experience."
+            value={lessonsLearned}
+            onChange={(event) => {
+              setLessonsLearned(event.target.value)
               if (formError) setFormError('')
             }}
           />
