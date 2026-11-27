@@ -1794,6 +1794,143 @@ progress.loading-spinner:indeterminate {
   animation: progress-spin 0.75s linear infinite;
 }
 
+/* Formal Weekly Accomplishment Document preview (paper artifact, white/black in both themes) */
+dialog.form-dialog:has(.accomplishment-document-dialog-body) {
+  inline-size: min(56rem, calc(100dvw - 2rem));
+}
+
+.accomplishment-document-sheet {
+  color-scheme: light;
+  max-inline-size: 48rem;
+  margin-inline: auto;
+  padding: 1.75rem 1.5rem;
+  background-color: #ffffff;
+  color: #000000;
+  border: 1px solid #d1d5db;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 12pt;
+  line-height: 2;
+}
+
+@media (min-width: 40rem) {
+  .accomplishment-document-sheet {
+    padding: 3rem;
+  }
+}
+
+.accomplishment-document-header {
+  text-align: center;
+  margin-block-end: 1.5rem;
+}
+
+.accomplishment-document-header h2 {
+  margin: 0;
+  font-size: 14pt;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #000000;
+}
+
+.accomplishment-document-title {
+  margin: 0.25rem 0 0;
+  font-size: 12pt;
+  font-weight: 700;
+  line-height: 1.5;
+  color: #000000;
+}
+
+.accomplishment-document-week {
+  margin: 0.2rem 0 0;
+  font-size: 12pt;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #000000;
+}
+
+.accomplishment-document-info {
+  margin-block: 1.5rem;
+  line-height: 1.5;
+}
+
+.accomplishment-document-info p {
+  margin: 0.15rem 0;
+  line-height: 1.5;
+  color: #000000;
+  overflow-wrap: break-word;
+}
+
+.accomplishment-document-section {
+  margin-block-start: 1.25rem;
+}
+
+.accomplishment-document-section h3 {
+  margin: 0 0 0.25rem;
+  font-size: 12pt;
+  font-weight: 700;
+  line-height: 1.5;
+  color: #000000;
+}
+
+.accomplishment-document-section p {
+  margin: 0;
+  font-size: 12pt;
+  line-height: 2;
+  text-align: justify;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  color: #000000;
+}
+
+.accomplishment-document-attachment {
+  margin: 1.5rem 0 0;
+  line-height: 1.6;
+  color: #000000;
+  overflow-wrap: break-word;
+}
+
+.accomplishment-document-signatures {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2rem;
+  margin-block-start: 3.5rem;
+  line-height: 1.5;
+  color: #000000;
+}
+
+@media (min-width: 34rem) {
+  .accomplishment-document-signatures {
+    grid-template-columns: 1fr 1fr;
+    gap: 3rem;
+  }
+}
+
+.accomplishment-document-signature-col {
+  min-inline-size: 0;
+}
+
+.accomplishment-document-signature-label {
+  margin: 0;
+  font-size: 12pt;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #000000;
+}
+
+.accomplishment-document-signature-line {
+  block-size: 2.75rem;
+  border-block-end: 1px solid #000000;
+}
+
+.accomplishment-document-signature-name {
+  margin: 0.35rem 0 0;
+  font-size: 12pt;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #000000;
+  overflow-wrap: break-word;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .auth-btn-spinner {
     animation-duration: 2.5s;

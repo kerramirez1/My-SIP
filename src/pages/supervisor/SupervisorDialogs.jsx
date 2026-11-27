@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { AccomplishmentDocumentDialog } from '../../components/AccomplishmentDocumentDialog'
 import { AlertMessage } from '../../components/AlertMessage'
 import { FormField } from '../../components/FormField'
 import { CloseIcon, PaperclipIcon } from '../../components/Icons'
 import { StatusBadge } from '../../components/StatusBadge'
 import { SubmissionDialog } from '../../components/SubmissionDialog'
+import { useAuth } from '../../context/useAuth'
 import {
   formatDecimalHours,
   formatDurationMinutes,
@@ -306,6 +308,7 @@ function ReviewDialogBody({
   onReviewed,
   onAttachmentError,
   onSubmittingChange,
+  onOpenDocument,
 }) {
   const [reviewRemarks, setReviewRemarks] = useState('')
   const [reviewError, setReviewError] = useState('')
@@ -477,12 +480,21 @@ function ReviewDialogBody({
               className="space-y-4 rounded-[6px] border border-rule bg-surface p-4 sm:p-5"
             >
               <div className="border-b border-rule pb-3.5">
-                <h3
-                  id={`${headingId}-report`}
-                  className="text-sm font-semibold text-ink break-words"
-                >
-                  {item.row.title || 'Weekly Accomplishment Report'}
-                </h3>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <h3
+                    id={`${headingId}-report`}
+                    className="text-sm font-semibold text-ink break-words"
+                  >
+                    {item.row.title || 'Weekly Accomplishment Report'}
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={onOpenDocument}
+                    className="inline-flex min-h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-[5px] border border-rule bg-surface px-2.5 text-xs font-medium text-ink hover:bg-surface-subtle"
+                  >
+                    View document
+                  </button>
+                </div>
                 <dl className="mt-3 grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
                   <div>
                     <dt className="text-ink-muted">Reporting Period</dt>
@@ -796,10 +808,12 @@ export function ReviewDialog({
   item,
   intern = null,
   supervisorId,
+  supervisorName = '',
   onClose,
   onReviewed,
   onAttachmentError,
 }) {
+  const { profile } = useAuth()
   const dialogRef = useRef(null)
   const pointerDownOutsideRef = useRef(false)
   const isSubmittingRef = useRef(false)
@@ -808,6 +822,12 @@ export function ReviewDialog({
   const todayIso = getTodayIsoDate()
   const open = Boolean(item)
   const supportsClosedBy = supportsDialogClosedBy()
+  const [documentKey, setDocumentKey] = useState('')
+  const resolvedSupervisorName =
+    supervisorName || profile?.full_name?.trim() || ''
+  const isDocumentOpen = Boolean(
+    item && item.type === 'accomplishments' && documentKey === item.key,
+  )
 
   useEffect(() => {
     const dialog = dialogRef.current
@@ -830,6 +850,7 @@ export function ReviewDialog({
 
   const handleRequestClose = useCallback(() => {
     if (isSubmittingRef.current) return
+    setDocumentKey('')
     onClose?.()
   }, [onClose])
 
@@ -838,56 +859,71 @@ export function ReviewDialog({
   }, [])
 
   return (
-    <dialog
-      ref={dialogRef}
-      aria-labelledby={headingId}
-      aria-describedby={descId}
-      closedby={supportsClosedBy ? 'any' : undefined}
-      data-closedby={supportsClosedBy ? 'native' : 'fallback'}
-      onCancel={(event) => {
-        event.preventDefault()
-        handleRequestClose()
-      }}
-      onPointerDown={(event) => {
-        if (supportsClosedBy) return
-        const dialog = dialogRef.current
-        if (!dialog || event.target !== dialog) {
-          pointerDownOutsideRef.current = false
-          return
-        }
-        pointerDownOutsideRef.current = isPointerOutsideDialog(event, dialog)
-      }}
-      onClick={(event) => {
-        if (supportsClosedBy) return
-        const dialog = dialogRef.current
-        const clickedOutside =
-          pointerDownOutsideRef.current &&
-          dialog &&
-          event.target === dialog &&
-          isPointerOutsideDialog(event, dialog)
-        pointerDownOutsideRef.current = false
-        if (clickedOutside) {
+    <>
+      <dialog
+        ref={dialogRef}
+        aria-labelledby={headingId}
+        aria-describedby={descId}
+        closedby={supportsClosedBy ? 'any' : undefined}
+        data-closedby={supportsClosedBy ? 'native' : 'fallback'}
+        onCancel={(event) => {
+          event.preventDefault()
           handleRequestClose()
-        }
-      }}
-      className="review-drawer-dialog shadow-2xl"
-    >
-      {item ? (
-        <ReviewDialogBody
-          key={item.key}
-          item={item}
-          intern={intern}
-          supervisorId={supervisorId}
-          todayIso={todayIso}
-          headingId={headingId}
-          descId={descId}
-          onRequestClose={handleRequestClose}
-          onReviewed={onReviewed}
-          onAttachmentError={onAttachmentError}
-          onSubmittingChange={handleSubmittingChange}
-        />
-      ) : null}
-    </dialog>
+        }}
+        onPointerDown={(event) => {
+          if (supportsClosedBy) return
+          const dialog = dialogRef.current
+          if (!dialog || event.target !== dialog) {
+            pointerDownOutsideRef.current = false
+            return
+          }
+          pointerDownOutsideRef.current = isPointerOutsideDialog(event, dialog)
+        }}
+        onClick={(event) => {
+          if (supportsClosedBy) return
+          const dialog = dialogRef.current
+          const clickedOutside =
+            pointerDownOutsideRef.current &&
+            dialog &&
+            event.target === dialog &&
+            isPointerOutsideDialog(event, dialog)
+          pointerDownOutsideRef.current = false
+          if (clickedOutside) {
+            handleRequestClose()
+          }
+        }}
+        className="review-drawer-dialog shadow-2xl"
+      >
+        {item ? (
+          <ReviewDialogBody
+            key={item.key}
+            item={item}
+            intern={intern}
+            supervisorId={supervisorId}
+            todayIso={todayIso}
+            headingId={headingId}
+            descId={descId}
+            onRequestClose={handleRequestClose}
+            onReviewed={onReviewed}
+            onAttachmentError={onAttachmentError}
+            onSubmittingChange={handleSubmittingChange}
+            onOpenDocument={() => setDocumentKey(item.key)}
+          />
+        ) : null}
+      </dialog>
+
+      <AccomplishmentDocumentDialog
+        open={isDocumentOpen}
+        onClose={() => setDocumentKey('')}
+        row={isDocumentOpen ? item.row : null}
+        internName={intern?.full_name || item?.internName}
+        studentIdNo={intern?.student_id_no ?? item?.studentIdNo}
+        course={intern?.course ?? item?.course}
+        schoolName={intern?.school_name ?? item?.schoolName}
+        companyName={intern?.company_name ?? item?.companyName}
+        supervisorName={resolvedSupervisorName}
+      />
+    </>
   )
 }
 

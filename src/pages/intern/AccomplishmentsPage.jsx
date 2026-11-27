@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { AccomplishmentDocumentDialog } from '../../components/AccomplishmentDocumentDialog'
 import { AlertMessage } from '../../components/AlertMessage'
 import { FormField } from '../../components/FormField'
 import {
@@ -62,6 +63,7 @@ export function AccomplishmentsPage() {
 
   const { profile } = useAuth()
   const internId = profile?.id
+  const supervisorId = profile?.supervisor_id ?? null
 
   const initialToday = getTodayIsoDate()
   const [filterDate, setFilterDate] = useState(initialToday)
@@ -69,7 +71,12 @@ export function AccomplishmentsPage() {
     getMondayOfWeek(filterDate) || getMondayOfWeek(initialToday)
 
   const [listState, setListState] = useState(EMPTY_LIST_STATE)
+  const [supervisorState, setSupervisorState] = useState({
+    loadedId: '',
+    name: '',
+  })
   const [reloadCounter, setReloadCounter] = useState(0)
+  const [documentRow, setDocumentRow] = useState(null)
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingRow, setEditingRow] = useState(null)
@@ -127,6 +134,34 @@ export function AccomplishmentsPage() {
       active = false
     }
   }, [currentQueryKey, internId, selectedWeekOf])
+
+  useEffect(() => {
+    if (!supabase || !supervisorId) return undefined
+
+    let active = true
+
+    supabase
+      .from('profiles')
+      .select('id, full_name')
+      .eq('id', supervisorId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!active) return
+        setSupervisorState({
+          loadedId: supervisorId,
+          name: error ? '' : (data?.full_name?.trim() || ''),
+        })
+      })
+
+    return () => {
+      active = false
+    }
+  }, [supervisorId])
+
+  const supervisorName =
+    supervisorId && supervisorState.loadedId === supervisorId
+      ? supervisorState.name
+      : ''
 
   const loadingList = Boolean(
     supabase && currentQueryKey && listState.loadedKey !== currentQueryKey,
@@ -550,7 +585,7 @@ export function AccomplishmentsPage() {
                   <th scope="col" className="w-36">
                     Status
                   </th>
-                  <th scope="col" className="col-action w-28">
+                  <th scope="col" className="col-action w-36">
                     Action
                   </th>
                 </tr>
@@ -653,22 +688,37 @@ export function AccomplishmentsPage() {
                       </td>
 
                       <td data-label="Action" className="col-action">
-                        {editable ? (
+                        <div className="flex flex-col items-start gap-1.5 sm:items-end">
+                          {editable ? (
+                            <button
+                              type="button"
+                              onClick={() => openEditDialog(row)}
+                              className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
+                            >
+                              <EditIcon className="size-3.5" />
+                              <span>Edit</span>
+                              <span className="visually-hidden">
+                                {' '}
+                                {row.title}
+                              </span>
+                            </button>
+                          ) : (
+                            <span className="text-xs text-ink-muted">
+                              Locked
+                            </span>
+                          )}
                           <button
                             type="button"
-                            onClick={() => openEditDialog(row)}
-                            className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
+                            onClick={() => setDocumentRow(row)}
+                            className="inline-flex min-h-8 items-center justify-center whitespace-nowrap rounded-[5px] border border-rule bg-surface px-2.5 text-xs font-medium text-ink hover:bg-surface-subtle"
                           >
-                            <EditIcon className="size-3.5" />
-                            <span>Edit</span>
+                            <span>View document</span>
                             <span className="visually-hidden">
                               {' '}
-                              {row.title}
+                              for {row.title}
                             </span>
                           </button>
-                        ) : (
-                          <span className="text-xs text-ink-muted">Locked</span>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   )
@@ -880,6 +930,18 @@ export function AccomplishmentsPage() {
           </div>
         </form>
       </SubmissionDialog>
+
+      <AccomplishmentDocumentDialog
+        open={Boolean(documentRow)}
+        onClose={() => setDocumentRow(null)}
+        row={documentRow}
+        internName={profile?.full_name}
+        studentIdNo={profile?.student_id_no}
+        course={profile?.course}
+        schoolName={profile?.school_name}
+        companyName={profile?.company_name}
+        supervisorName={supervisorName}
+      />
     </div>
   )
 }

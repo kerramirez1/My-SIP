@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { AccomplishmentDocumentDialog } from '../../components/AccomplishmentDocumentDialog'
 import { AlertMessage } from '../../components/AlertMessage'
 import { StatusBadge } from '../../components/StatusBadge'
 import { useAuth } from '../../context/useAuth'
@@ -15,6 +17,7 @@ export function SupervisorHistoryPage() {
   const supervisorId = profile?.id
   const { loading, loadError, reviewHistory, reload } =
     useSupervisorData(supervisorId)
+  const [documentItem, setDocumentItem] = useState(null)
 
   return (
     <div className="max-w-6xl space-y-6">
@@ -105,6 +108,9 @@ export function SupervisorHistoryPage() {
                     <th scope="col" className="w-36">
                       Reviewed
                     </th>
+                    <th scope="col" className="col-action w-36">
+                      Action
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -151,6 +157,19 @@ export function SupervisorHistoryPage() {
                             '—'
                           )}
                         </td>
+                        <td data-label="Action" className="col-action">
+                          {item.type === 'accomplishments' && item.row ? (
+                            <button
+                              type="button"
+                              onClick={() => setDocumentItem(item)}
+                              className="inline-flex min-h-8 items-center justify-center whitespace-nowrap rounded-[5px] border border-rule bg-surface px-2.5 text-xs font-medium text-ink hover:bg-surface-subtle"
+                            >
+                              View document
+                            </button>
+                          ) : (
+                            <span className="text-xs text-ink-muted">—</span>
+                          )}
+                        </td>
                       </tr>
                     )
                   })}
@@ -160,6 +179,18 @@ export function SupervisorHistoryPage() {
           )}
         </section>
       )}
+
+      <AccomplishmentDocumentDialog
+        open={Boolean(documentItem)}
+        onClose={() => setDocumentItem(null)}
+        row={documentItem?.row ?? null}
+        internName={documentItem?.internName}
+        studentIdNo={documentItem?.studentIdNo}
+        course={documentItem?.course}
+        schoolName={documentItem?.schoolName}
+        companyName={documentItem?.companyName}
+        supervisorName={profile?.full_name}
+      />
     </div>
   )
 }

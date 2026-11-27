@@ -476,6 +476,7 @@ export function SupervisorReviewsPage() {
           reviewItem ? (internById.get(reviewItem.row.intern_id) ?? null) : null
         }
         supervisorId={supervisorId}
+        supervisorName={profile?.full_name}
         onClose={closeReviewDialog}
         onReviewed={handleReviewed}
         onAttachmentError={setAttachmentError}

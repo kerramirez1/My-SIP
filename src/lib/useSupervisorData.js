@@ -184,14 +184,21 @@ export function useSupervisorData(supervisorId) {
 
     const pendingAccomplishments = accomplishments
       .filter((row) => row.status === 'pending')
-      .map((row) => ({
-        key: `accomplishments-${row.id}`,
-        type: 'accomplishments',
-        typeLabel: TYPE_LABEL_SINGULAR.accomplishments,
-        internName: internById.get(row.intern_id)?.full_name || 'Intern',
-        sortAt: row.updated_at || row.created_at || row.week_of || '',
-        row,
-      }))
+      .map((row) => {
+        const intern = internById.get(row.intern_id)
+        return {
+          key: `accomplishments-${row.id}`,
+          type: 'accomplishments',
+          typeLabel: TYPE_LABEL_SINGULAR.accomplishments,
+          internName: intern?.full_name || 'Intern',
+          studentIdNo: intern?.student_id_no || '',
+          course: intern?.course || '',
+          schoolName: intern?.school_name || '',
+          companyName: intern?.company_name || '',
+          sortAt: row.updated_at || row.created_at || row.week_of || '',
+          row,
+        }
+      })
 
     // Tasks MUST have status === 'pending' AND submitted_at IS NOT NULL
     const pendingTasks = tasks
@@ -237,15 +244,24 @@ export function useSupervisorData(supervisorId) {
         }),
       ...accomplishments
         .filter((row) => row.reviewed_by === supervisorId && row.reviewed_at)
-        .map((row) => ({
-          key: `rev-accomplishments-${row.id}`,
-          internName: internById.get(row.intern_id)?.full_name || 'Intern',
-          typeLabel: TYPE_LABEL_SINGULAR.accomplishments,
-          summaryLabel: `${row.title} (${formatWeekRange(row.week_of)})`,
-          status: row.status,
-          remarks: row.reviewer_remarks,
-          reviewedAt: row.reviewed_at,
-        })),
+        .map((row) => {
+          const intern = internById.get(row.intern_id)
+          return {
+            key: `rev-accomplishments-${row.id}`,
+            type: 'accomplishments',
+            internName: intern?.full_name || 'Intern',
+            studentIdNo: intern?.student_id_no || '',
+            course: intern?.course || '',
+            schoolName: intern?.school_name || '',
+            companyName: intern?.company_name || '',
+            typeLabel: TYPE_LABEL_SINGULAR.accomplishments,
+            summaryLabel: `${row.title} (${formatWeekRange(row.week_of)})`,
+            status: row.status,
+            remarks: row.reviewer_remarks,
+            reviewedAt: row.reviewed_at,
+            row,
+          }
+        }),
       ...tasks
         .filter((row) => row.reviewed_by === supervisorId && row.reviewed_at)
         .map((row) => ({

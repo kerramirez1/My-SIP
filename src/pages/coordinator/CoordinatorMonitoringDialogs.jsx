@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { AccomplishmentDocumentDialog } from '../../components/AccomplishmentDocumentDialog'
 import { AlertMessage } from '../../components/AlertMessage'
 import { FormField } from '../../components/FormField'
 import { PaperclipIcon } from '../../components/Icons'
@@ -494,18 +495,28 @@ export function SubmissionDetailDialog({
   onRequestDelete,
 }) {
   const isApproved = item?.status === 'approved'
+  const [documentKey, setDocumentKey] = useState('')
+  const isDocumentOpen = Boolean(
+    item && item.kind === 'accomplishments' && documentKey === item.key,
+  )
+
+  function handleClose() {
+    setDocumentKey('')
+    onClose?.()
+  }
 
   return (
-    <SubmissionDialog
-      open={Boolean(item)}
-      title={
-        item
-          ? `${item.typeLabel} Details — ${item.internName}`
-          : 'Submission details'
-      }
-      description="Complete submission record, history timeline, supervisor review remarks, and coordinator oversight."
-      onClose={onClose}
-    >
+    <>
+      <SubmissionDialog
+        open={Boolean(item)}
+        title={
+          item
+            ? `${item.typeLabel} Details — ${item.internName}`
+            : 'Submission details'
+        }
+        description="Complete submission record, history timeline, supervisor review remarks, and coordinator oversight."
+        onClose={handleClose}
+      >
       {item ? (
         <div className="space-y-4 text-xs">
           {/* Structured Header Metadata */}
@@ -587,13 +598,22 @@ export function SubmissionDetailDialog({
               </dl>
             ) : item.kind === 'accomplishments' ? (
               <div className="space-y-2.5">
-                <div>
-                  <p className="text-sm font-semibold text-ink">
-                    {item.row.title}
-                  </p>
-                  <p className="mt-0.5 tabular-nums text-ink-muted">
-                    Week of {formatWeekRange(item.row.week_of)}
-                  </p>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-ink">
+                      {item.row.title}
+                    </p>
+                    <p className="mt-0.5 tabular-nums text-ink-muted">
+                      Week of {formatWeekRange(item.row.week_of)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDocumentKey(item.key)}
+                    className="inline-flex min-h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-[5px] border border-rule bg-surface px-2.5 text-xs font-medium text-ink hover:bg-surface-subtle"
+                  >
+                    View document
+                  </button>
                 </div>
                 {item.row.description ? (
                   <div>
@@ -798,7 +818,7 @@ export function SubmissionDetailDialog({
             )}
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="inline-flex min-h-9 items-center justify-center rounded-[5px] border border-rule bg-surface px-4 text-xs font-medium text-ink hover:bg-surface-subtle"
             >
               Close
@@ -806,7 +826,22 @@ export function SubmissionDetailDialog({
           </div>
         </div>
       ) : null}
-    </SubmissionDialog>
+      </SubmissionDialog>
+
+      <AccomplishmentDocumentDialog
+        open={isDocumentOpen}
+        onClose={() => setDocumentKey('')}
+        row={isDocumentOpen ? item.row : null}
+        internName={item?.internName}
+        studentIdNo={item?.studentIdNo}
+        course={item?.course}
+        schoolName={item?.schoolName}
+        companyName={item?.companyName}
+        supervisorName={
+          item?.supervisorName === '—' ? '' : item?.supervisorName
+        }
+      />
+    </>
   )
 }
 
