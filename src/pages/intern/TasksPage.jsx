@@ -326,6 +326,7 @@ export function TasksPage() {
     }
 
     const wasReviewedBack = hasReviewerFeedbackStatus(activeTask.status)
+    const previousAttachmentPath = activeTask.submission_attachment_url
     const { error: updateError } = await supabase
       .from('tasks')
       .update({
@@ -342,6 +343,19 @@ export function TasksPage() {
       setFormError(`Could not submit task completion: ${updateError.message}`)
       setSaving(false)
       return
+    }
+
+    if (previousAttachmentPath && previousAttachmentPath !== nextAttachmentPath) {
+      // Best-effort cleanup of the replaced/removed file: the submission
+      // already succeeded, so a failed removal must never surface as a
+      // failed submission.
+      try {
+        await supabase.storage
+          .from('attachments')
+          .remove([previousAttachmentPath])
+      } catch {
+        // Ignored — orphan cleanup is secondary to the successful save.
+      }
     }
 
     setPageSuccess(

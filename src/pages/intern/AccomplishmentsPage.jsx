@@ -258,6 +258,7 @@ export function AccomplishmentsPage() {
 
     if (editingRow) {
       const wasReviewedBack = hasReviewerFeedbackStatus(editingRow.status)
+      const previousAttachmentPath = editingRow.attachment_url
       const { error: updateError } = await supabase
         .from('accomplishments')
         .update({
@@ -278,6 +279,19 @@ export function AccomplishmentsPage() {
         setFormError(`Could not update accomplishment: ${updateError.message}`)
         setSaving(false)
         return
+      }
+
+      if (previousAttachmentPath && previousAttachmentPath !== nextAttachmentPath) {
+        // Best-effort cleanup of the replaced/removed file: the update
+        // already succeeded, so a failed removal must never surface as a
+        // failed save.
+        try {
+          await supabase.storage
+            .from('attachments')
+            .remove([previousAttachmentPath])
+        } catch {
+          // Ignored — orphan cleanup is secondary to the successful save.
+        }
       }
 
       setPageSuccess(

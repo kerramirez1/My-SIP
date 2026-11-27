@@ -553,6 +553,24 @@ export function CoordinatorSubmissionsPage() {
       return
     }
 
+    const attachmentPath =
+      deleteTarget.tableName === 'accomplishments'
+        ? deleteTarget.row?.attachment_url
+        : deleteTarget.tableName === 'tasks'
+          ? deleteTarget.row?.submission_attachment_url
+          : null
+
+    if (attachmentPath) {
+      // Best-effort cleanup of the deleted record's file: the record is
+      // already deleted, so a failed removal must never surface as a
+      // failed delete.
+      try {
+        await supabase.storage.from('attachments').remove([attachmentPath])
+      } catch {
+        // Ignored — orphan cleanup is secondary to the successful delete.
+      }
+    }
+
     const removedLabel = `${deleteTarget.typeLabel} record for ${deleteTarget.internName}`
     setDeleteTarget(null)
     setSelectedSubmission(null)
