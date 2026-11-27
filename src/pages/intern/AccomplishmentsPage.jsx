@@ -17,6 +17,7 @@ import {
   buildAttachmentFileName,
   getAttachmentDisplayName,
   getReviewResetPayload,
+  hasReviewerFeedbackStatus,
   isEditableSubmissionStatus,
   splitFilenameForDisplay,
 } from '../../lib/submissionHelpers'
@@ -135,11 +136,12 @@ export function AccomplishmentsPage() {
   const statusCounts = items.reduce(
     (counts, row) => {
       if (row.status === 'approved') counts.approved += 1
+      else if (row.status === 'rejected') counts.rejected += 1
       else if (row.status === 'returned') counts.returned += 1
       else counts.pending += 1
       return counts
     },
-    { pending: 0, returned: 0, approved: 0 },
+    { pending: 0, returned: 0, rejected: 0, approved: 0 },
   )
 
   function resetForm(targetDate = filterDate) {
@@ -243,7 +245,7 @@ export function AccomplishmentsPage() {
     }
 
     if (editingRow) {
-      const wasReturned = editingRow.status === 'returned'
+      const wasReviewedBack = hasReviewerFeedbackStatus(editingRow.status)
       const { error: updateError } = await supabase
         .from('accomplishments')
         .update({
@@ -255,7 +257,7 @@ export function AccomplishmentsPage() {
         })
         .eq('id', editingRow.id)
         .eq('intern_id', internId)
-        .in('status', ['pending', 'returned'])
+        .in('status', ['pending', 'returned', 'rejected'])
 
       if (updateError) {
         setFormError(`Could not update accomplishment: ${updateError.message}`)
@@ -264,7 +266,7 @@ export function AccomplishmentsPage() {
       }
 
       setPageSuccess(
-        wasReturned
+        wasReviewedBack
           ? 'Accomplishment updated and resubmitted as pending.'
           : 'Accomplishment updated.',
       )
@@ -394,6 +396,12 @@ export function AccomplishmentsPage() {
                 <span>{statusCounts.pending} pending</span>
                 <span aria-hidden="true" className="h-3 w-px bg-rule" />
                 <span>{statusCounts.returned} returned</span>
+                {statusCounts.rejected > 0 ? (
+                  <>
+                    <span aria-hidden="true" className="h-3 w-px bg-rule" />
+                    <span>{statusCounts.rejected} rejected</span>
+                  </>
+                ) : null}
                 <span aria-hidden="true" className="h-3 w-px bg-rule" />
                 <span>{statusCounts.approved} approved</span>
               </div>
@@ -530,8 +538,11 @@ export function AccomplishmentsPage() {
                               {row.description}
                             </p>
                           ) : null}
-                          {row.status === 'returned' ? (
-                            <ReturnedRemarks remarks={row.reviewer_remarks} />
+                          {hasReviewerFeedbackStatus(row.status) ? (
+                            <ReturnedRemarks
+                              remarks={row.reviewer_remarks}
+                              status={row.status}
+                            />
                           ) : null}
                         </div>
                       </td>
@@ -604,7 +615,7 @@ export function AccomplishmentsPage() {
         open={dialogOpen}
         title={editingRow ? 'Edit accomplishment' : 'Add accomplishment'}
         description={
-          editingRow?.status === 'returned'
+          hasReviewerFeedbackStatus(editingRow?.status)
             ? 'Saving changes resets this entry to Pending for supervisor re-review.'
             : 'Entries are grouped by the Monday of the selected week.'
         }

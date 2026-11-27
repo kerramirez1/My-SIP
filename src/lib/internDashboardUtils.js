@@ -1,4 +1,5 @@
 import {
+  DEFAULT_BREAK_MINUTES,
   computeElapsedMinutes,
   formatDurationMinutes,
   formatWallClockTime,
@@ -15,14 +16,23 @@ export const DEFAULT_REQUIRED_INTERNSHIP_HOURS = 500
 const SHORT_WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 /**
- * Resolves the required internship hours target from environment config or the standard default.
- * @param {string | number | undefined} rawEnvValue
+ * Resolves the required internship hours target:
+ * 1. Per-intern profile.required_hours (highest priority)
+ * 2. Optional VITE_REQUIRED_INTERNSHIP_HOURS env override
+ * 3. Standard default (500 hours)
+ *
+ * @param {number | string | null | undefined} profileRequiredHours
+ * @param {string | number | undefined} [rawEnvValue]
  * @returns {number}
  */
-export function getRequiredInternshipHours(rawEnvValue) {
-  const parsed = Number(rawEnvValue)
-  if (Number.isFinite(parsed) && parsed > 0) {
-    return parsed
+export function getRequiredInternshipHours(profileRequiredHours, rawEnvValue) {
+  const fromProfile = Number(profileRequiredHours)
+  if (Number.isFinite(fromProfile) && fromProfile > 0) {
+    return fromProfile
+  }
+  const fromEnv = Number(rawEnvValue)
+  if (Number.isFinite(fromEnv) && fromEnv > 0) {
+    return fromEnv
   }
   return DEFAULT_REQUIRED_INTERNSHIP_HOURS
 }
@@ -85,6 +95,10 @@ export function getDeadlineBadge(taskDateIso, todayIso) {
   return { label: `In ${diff} days`, tone: 'upcoming' }
 }
 
+function getRowBreakMinutes(row) {
+  return row?.break_minutes ?? DEFAULT_BREAK_MINUTES
+}
+
 /**
  * Computes all Intern Dashboard metrics, current-week attendance grid, upcoming tasks,
  * and unified recent submission activity strictly from live Supabase rows.
@@ -106,13 +120,17 @@ export function buildInternDashboardMetrics({
 }) {
   const requiredMinutes = Math.max(1, Math.round(requiredHours * 60))
 
-  // 1. Approved internship hours (strictly from approved attendance entries only)
+  // 1. Approved internship hours (strictly from approved attendance entries, break-adjusted)
   let approvedAttendanceMinutes = 0
   let pendingAttendanceMinutes = 0
   let approvedAttendanceCount = 0
 
   for (const row of attendance) {
-    const minutes = computeElapsedMinutes(row.time_in, row.time_out)
+    const minutes = computeElapsedMinutes(
+      row.time_in,
+      row.time_out,
+      getRowBreakMinutes(row),
+    )
     const validMinutes = minutes !== null && minutes > 0 ? minutes : 0
 
     if (row.status === 'approved') {
@@ -131,10 +149,12 @@ export function buildInternDashboardMetrics({
   const allSubmissions = [...attendance, ...accomplishments, ...tasks]
   let pendingSubmissionsCount = 0
   let returnedSubmissionsCount = 0
+  let rejectedSubmissionsCount = 0
 
   for (const row of allSubmissions) {
     if (row.status === 'pending') pendingSubmissionsCount += 1
     else if (row.status === 'returned') returnedSubmissionsCount += 1
+    else if (row.status === 'rejected') rejectedSubmissionsCount += 1
   }
 
   // 3. Tasks completion + upcoming/active tasks with deadlines
@@ -145,16 +165,16 @@ export function buildInternDashboardMetrics({
   const activeTasks = tasks
     .filter((row) => row.status !== 'approved')
     .map((row) => {
-      const dayDiff = getCalendarDayDiff(todayIso, row.task_date)
+      const effectiveDeadline = row.deadline || row.task_date
+      const dayDiff = getCalendarDayDiff(todayIso, effectiveDeadline)
       return {
         ...row,
+        effectiveDeadline,
         dayDiff: dayDiff ?? Number.MAX_SAFE_INTEGER,
-        deadline: getDeadlineBadge(row.task_date, todayIso),
+        deadlineBadge: getDeadlineBadge(effectiveDeadline, todayIso),
       }
     })
     .sort((a, b) => {
-      // Show upcoming & due-today items first (nearest deadline first),
-      // then overdue items (most recent overdue first).
       const aUpcoming = a.dayDiff >= 0
       const bUpcoming = b.dayDiff >= 0
       if (aUpcoming !== bUpcoming) return aUpcoming ? -1 : 1
@@ -162,7 +182,7 @@ export function buildInternDashboardMetrics({
       return b.dayDiff - a.dayDiff
     })
 
-  // 4. Current Monday-Saturday weekly attendance summary
+  // 4. Current Monday-Saturday weekly attendance summary (break-adjusted)
   const currentWeekOf = getMondayOfWeek(todayIso)
   const currentWeekEntries = attendance
     .filter((row) => row.week_of === currentWeekOf)
@@ -178,7 +198,11 @@ export function buildInternDashboardMetrics({
   let weekApprovedMinutes = 0
 
   for (const row of currentWeekEntries) {
-    const elapsed = computeElapsedMinutes(row.time_in, row.time_out)
+    const elapsed = computeElapsedMinutes(
+      row.time_in,
+      row.time_out,
+      getRowBreakMinutes(row),
+    )
     if (elapsed !== null && elapsed > 0) {
       weekTotalMinutes += elapsed
       if (row.status === 'approved') {
@@ -191,7 +215,11 @@ export function buildInternDashboardMetrics({
     const isoDate = currentWeekOf ? shiftIsoDate(currentWeekOf, index) : ''
     const entry = entryByDate.get(isoDate) ?? null
     const minutes = entry
-      ? computeElapsedMinutes(entry.time_in, entry.time_out)
+      ? computeElapsedMinutes(
+          entry.time_in,
+          entry.time_out,
+          getRowBreakMinutes(entry),
+        )
       : null
 
     return {
@@ -207,7 +235,11 @@ export function buildInternDashboardMetrics({
   // 5. Unified recent submission activity across attendance, accomplishments, and tasks
   const recentActivity = [
     ...attendance.map((row) => {
-      const minutes = computeElapsedMinutes(row.time_in, row.time_out)
+      const minutes = computeElapsedMinutes(
+        row.time_in,
+        row.time_out,
+        getRowBreakMinutes(row),
+      )
       const durationText =
         minutes !== null && minutes >= 0
           ? ` (${formatDurationMinutes(minutes)})`
@@ -238,10 +270,15 @@ export function buildInternDashboardMetrics({
       type: 'Task',
       route: '/intern/tasks',
       title: row.title,
-      periodLabel: formatCalendarDate(row.task_date),
+      periodLabel: formatCalendarDate(row.deadline || row.task_date),
       status: row.status,
       reviewerRemarks: row.reviewer_remarks,
-      activityAt: row.reviewed_at || row.updated_at || row.created_at || '',
+      activityAt:
+        row.reviewed_at ||
+        row.submitted_at ||
+        row.updated_at ||
+        row.created_at ||
+        '',
     })),
   ]
     .sort((a, b) => String(b.activityAt).localeCompare(String(a.activityAt)))
@@ -259,6 +296,8 @@ export function buildInternDashboardMetrics({
     isGoalComplete: approvedAttendanceMinutes >= requiredMinutes,
     pendingSubmissionsCount,
     returnedSubmissionsCount,
+    rejectedSubmissionsCount,
+    needsRevisionCount: returnedSubmissionsCount + rejectedSubmissionsCount,
     totalSubmissionsCount: allSubmissions.length,
     completedTasksCount,
     totalTasksCount: tasks.length,

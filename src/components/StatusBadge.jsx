@@ -49,6 +49,23 @@ const STATUS_META = {
       </svg>
     ),
   },
+  rejected: {
+    label: 'Rejected',
+    className: 'border-rejected-border bg-rejected-bg text-on-accent',
+    icon: (
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 16 16"
+        className="size-3.5 shrink-0"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.65"
+      >
+        <circle cx="8" cy="8" r="5.5" />
+        <path d="M5.75 5.75 10.25 10.25M10.25 5.75 5.75 10.25" strokeLinecap="square" />
+      </svg>
+    ),
+  },
 }
 
 export function StatusBadge({ status }) {

@@ -21,6 +21,8 @@
   --color-error: #9E1C1C;
   --color-error-border: #C92A2A;
   --color-error-tint: #FDF2F2;
+  --color-rejected-bg: #B42318;
+  --color-rejected-border: #912018;
 }
 
 @layer base {
@@ -64,6 +66,10 @@
     --error-border-dark: #DF5C58;
     --error-tint-light: #FDF2F2;
     --error-tint-dark: #2A191C;
+    --rejected-bg-light: #B42318;
+    --rejected-bg-dark: #991B1B;
+    --rejected-border-light: #912018;
+    --rejected-border-dark: #DC2626;
     --scrollbar-thumb-light: #6B7280;
     --scrollbar-thumb-dark: #6C7688;
     --scrollbar-track-light: #EEF0F3;
@@ -91,6 +97,8 @@
     --color-error: var(--error-light);
     --color-error-border: var(--error-border-light);
     --color-error-tint: var(--error-tint-light);
+    --color-rejected-bg: var(--rejected-bg-light);
+    --color-rejected-border: var(--rejected-border-light);
     --color-scrollbar-thumb: var(--scrollbar-thumb-light);
     --color-scrollbar-track: var(--scrollbar-track-light);
     --color-backdrop-scrim: var(--backdrop-scrim-light);
@@ -124,6 +132,8 @@
       --color-error: var(--error-dark);
       --color-error-border: var(--error-border-dark);
       --color-error-tint: var(--error-tint-dark);
+      --color-rejected-bg: var(--rejected-bg-dark);
+      --color-rejected-border: var(--rejected-border-dark);
       --color-scrollbar-thumb: var(--scrollbar-thumb-dark);
       --color-scrollbar-track: var(--scrollbar-track-dark);
       --color-backdrop-scrim: var(--backdrop-scrim-dark);
@@ -152,6 +162,8 @@
       --color-error: var(--error-dark);
       --color-error-border: var(--error-border-dark);
       --color-error-tint: var(--error-tint-dark);
+      --color-rejected-bg: var(--rejected-bg-dark);
+      --color-rejected-border: var(--rejected-border-dark);
       --color-scrollbar-thumb: var(--scrollbar-thumb-dark);
       --color-scrollbar-track: var(--scrollbar-track-dark);
       --color-backdrop-scrim: var(--backdrop-scrim-dark);
@@ -179,6 +191,8 @@
       --color-error: var(--error-light);
       --color-error-border: var(--error-border-light);
       --color-error-tint: var(--error-tint-light);
+      --color-rejected-bg: var(--rejected-bg-light);
+      --color-rejected-border: var(--rejected-border-light);
       --color-scrollbar-thumb: var(--scrollbar-thumb-light);
       --color-scrollbar-track: var(--scrollbar-track-light);
       --color-backdrop-scrim: var(--backdrop-scrim-light);
@@ -240,6 +254,14 @@
       --color-error-tint: light-dark(
         var(--error-tint-light),
         var(--error-tint-dark)
+      );
+      --color-rejected-bg: light-dark(
+        var(--rejected-bg-light),
+        var(--rejected-bg-dark)
+      );
+      --color-rejected-border: light-dark(
+        var(--rejected-border-light),
+        var(--rejected-border-dark)
       );
       --color-scrollbar-thumb: light-dark(
         var(--scrollbar-thumb-light),

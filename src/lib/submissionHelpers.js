@@ -53,21 +53,30 @@ export function splitFilenameForDisplay(fileName) {
 }
 
 /**
- * Returns true if the intern can still edit the submission row.
+ * Returns true if the intern can still edit or resubmit the row.
  * @param {string | undefined | null} status
  * @returns {boolean}
  */
 export function isEditableSubmissionStatus(status) {
-  return status === 'pending' || status === 'returned'
+  return status === 'pending' || status === 'returned' || status === 'rejected'
 }
 
 /**
- * When a returned submission is edited and saved, reset review fields back to pending.
+ * Returns true if the submission was sent back by a reviewer and carries remarks.
+ * @param {string | undefined | null} status
+ * @returns {boolean}
+ */
+export function hasReviewerFeedbackStatus(status) {
+  return status === 'returned' || status === 'rejected'
+}
+
+/**
+ * When a returned or rejected submission is edited and saved, reset review fields back to pending.
  * @param {string | undefined | null} previousStatus
  * @returns {Record<string, unknown>}
  */
 export function getReviewResetPayload(previousStatus) {
-  if (previousStatus === 'returned') {
+  if (previousStatus === 'returned' || previousStatus === 'rejected') {
     return {
       status: 'pending',
       reviewed_by: null,

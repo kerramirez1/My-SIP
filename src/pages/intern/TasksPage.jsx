@@ -1,24 +1,65 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertMessage } from '../../components/AlertMessage'
 import { FormField } from '../../components/FormField'
-import { EditIcon, NavIcon, PlusIcon } from '../../components/Icons'
+import { EditIcon, NavIcon, PaperclipIcon } from '../../components/Icons'
 import { ReturnedRemarks } from '../../components/ReturnedRemarks'
 import { StatusBadge } from '../../components/StatusBadge'
 import { SubmissionDialog } from '../../components/SubmissionDialog'
 import { useAuth } from '../../context/useAuth'
 import {
+  buildAttachmentFileName,
+  getAttachmentDisplayName,
   getReviewResetPayload,
+  hasReviewerFeedbackStatus,
   isEditableSubmissionStatus,
+  splitFilenameForDisplay,
 } from '../../lib/submissionHelpers'
 import { supabase } from '../../lib/supabaseClient'
 import { useDocumentTitle } from '../../lib/useDocumentTitle'
 import { useFormValidationSync } from '../../lib/useFormValidationSync'
-import { formatCalendarDate, getTodayIsoDate } from '../../lib/weekUtils'
+import { formatCalendarDate } from '../../lib/weekUtils'
 
 const EMPTY_LIST_STATE = {
   loadedKey: '',
   items: [],
   error: '',
+}
+
+const PRIORITY_META = {
+  high: {
+    label: 'High',
+    className: 'border-error-border/45 bg-error-tint text-error',
+  },
+  medium: {
+    label: 'Medium',
+    className: 'border-accent/35 bg-accent-tint text-accent',
+  },
+  low: {
+    label: 'Low',
+    className: 'border-rule bg-surface-subtle text-ink-muted',
+  },
+}
+
+function PriorityBadge({ priority }) {
+  const meta = PRIORITY_META[priority] ?? PRIORITY_META.medium
+  return (
+    <span
+      className={`inline-flex items-center rounded-[5px] border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${meta.className}`}
+    >
+      {meta.label}
+    </span>
+  )
+}
+
+function FileNameLabel({ objectPath }) {
+  const displayName = getAttachmentDisplayName(objectPath)
+  const { stem, extension } = splitFilenameForDisplay(displayName)
+  return (
+    <span className="filename-truncate text-xs text-ink-muted">
+      <span>{stem}</span>
+      {extension}
+    </span>
+  )
 }
 
 function clearFormValidationClasses(form) {
@@ -40,16 +81,21 @@ export function TasksPage() {
   const [reloadCounter, setReloadCounter] = useState(0)
 
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [editingRow, setEditingRow] = useState(null)
-  const [taskDate, setTaskDate] = useState(() => getTodayIsoDate())
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
+  const [activeTask, setActiveTask] = useState(null)
+  const [completionDescription, setCompletionDescription] = useState('')
+  const [selectedFile, setSelectedFile] = useState(null)
+  const [removeExistingAttachment, setRemoveExistingAttachment] = useState(false)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
   const [pageSuccess, setPageSuccess] = useState('')
 
+  const [openingId, setOpeningId] = useState(null)
+  const [attachmentError, setAttachmentError] = useState('')
+  const [signedUrlsById, setSignedUrlsById] = useState({})
+
   const formRef = useRef(null)
-  const titleInputRef = useRef(null)
+  const completionInputRef = useRef(null)
+  const fileInputRef = useRef(null)
 
   useFormValidationSync(formRef)
 
@@ -63,10 +109,10 @@ export function TasksPage() {
     supabase
       .from('tasks')
       .select(
-        'id, intern_id, title, description, task_date, status, reviewed_by, reviewer_remarks, reviewed_at, created_at',
+        'id, intern_id, assigned_by, title, description, task_date, deadline, priority, completion_description, submission_attachment_url, submitted_at, status, reviewed_by, reviewer_remarks, reviewed_at, created_at',
       )
       .eq('intern_id', internId)
-      .order('task_date', { ascending: false })
+      .order('deadline', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: false })
       .then(({ data, error }) => {
         if (!active) return
@@ -86,43 +132,34 @@ export function TasksPage() {
     supabase && currentQueryKey && listState.loadedKey !== currentQueryKey,
   )
   const items = listState.loadedKey === currentQueryKey ? listState.items : []
-  const listError = listState.loadedKey === currentQueryKey ? listState.error : ''
+  const listError =
+    attachmentError ||
+    (listState.loadedKey === currentQueryKey ? listState.error : '')
 
   const statusCounts = items.reduce(
     (counts, row) => {
       if (row.status === 'approved') counts.approved += 1
+      else if (row.status === 'rejected') counts.rejected += 1
       else if (row.status === 'returned') counts.returned += 1
       else counts.pending += 1
       return counts
     },
-    { pending: 0, returned: 0, approved: 0 },
+    { pending: 0, returned: 0, rejected: 0, approved: 0 },
   )
 
-  function resetForm() {
-    setEditingRow(null)
-    setTaskDate(getTodayIsoDate())
-    setTitle('')
-    setDescription('')
-    setFormError('')
-    clearFormValidationClasses(formRef.current)
-  }
-
-  function openCreateDialog() {
-    resetForm()
-    setDialogOpen(true)
-    window.requestAnimationFrame(() => titleInputRef.current?.focus())
-  }
-
-  function openEditDialog(row) {
+  function openSubmissionDialog(row) {
     if (!isEditableSubmissionStatus(row.status)) return
-    setEditingRow(row)
-    setTaskDate(row.task_date)
-    setTitle(row.title ?? '')
-    setDescription(row.description ?? '')
+    setActiveTask(row)
+    setCompletionDescription(row.completion_description ?? '')
+    setSelectedFile(null)
+    setRemoveExistingAttachment(false)
     setFormError('')
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
     clearFormValidationClasses(formRef.current)
     setDialogOpen(true)
-    window.requestAnimationFrame(() => titleInputRef.current?.focus())
+    window.requestAnimationFrame(() => completionInputRef.current?.focus())
   }
 
   const handleCloseDialog = useCallback(() => {
@@ -130,29 +167,23 @@ export function TasksPage() {
     setFormError('')
   }, [])
 
-  async function handleSubmit(event) {
+  async function handleSubmitCompletion(event) {
     event.preventDefault()
 
-    if (!supabase || !internId) {
+    if (!supabase || !internId || !activeTask) {
       setFormError('Unable to verify your intern profile session.')
       return
     }
 
-    const trimmedTitle = title.trim()
-    const trimmedDescription = description.trim()
-    if (!trimmedTitle) {
-      setFormError('Please enter a task title.')
-      titleInputRef.current?.focus()
+    if (!isEditableSubmissionStatus(activeTask.status)) {
+      setFormError('Approved tasks cannot be modified.')
       return
     }
 
-    if (!taskDate) {
-      setFormError('Please select the task date.')
-      return
-    }
-
-    if (editingRow && !isEditableSubmissionStatus(editingRow.status)) {
-      setFormError('Approved tasks cannot be edited.')
+    const trimmedCompletion = completionDescription.trim()
+    if (!trimmedCompletion) {
+      setFormError('Please describe your completed work before submitting.')
+      completionInputRef.current?.focus()
       return
     }
 
@@ -160,76 +191,102 @@ export function TasksPage() {
     setFormError('')
     setPageSuccess('')
 
-    if (editingRow) {
-      const wasReturned = editingRow.status === 'returned'
-      const { error: updateError } = await supabase
-        .from('tasks')
-        .update({
-          task_date: taskDate,
-          title: trimmedTitle,
-          description: trimmedDescription || null,
-          ...getReviewResetPayload(editingRow.status),
-        })
-        .eq('id', editingRow.id)
-        .eq('intern_id', internId)
-        .in('status', ['pending', 'returned'])
+    let nextAttachmentPath = removeExistingAttachment
+      ? null
+      : (activeTask.submission_attachment_url ?? null)
 
-      if (updateError) {
-        setFormError(`Could not update task: ${updateError.message}`)
+    if (selectedFile) {
+      const filePath = `${internId}/${buildAttachmentFileName(selectedFile.name)}`
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('attachments')
+        .upload(filePath, selectedFile)
+
+      if (uploadError) {
+        setFormError(`Attachment upload failed: ${uploadError.message}`)
         setSaving(false)
         return
       }
 
-      setPageSuccess(
-        wasReturned ? 'Task updated and resubmitted as pending.' : 'Task updated.',
-      )
-    } else {
-      const { error: insertError } = await supabase.from('tasks').insert({
-        intern_id: internId,
-        task_date: taskDate,
-        title: trimmedTitle,
-        description: trimmedDescription || null,
-      })
-
-      if (insertError) {
-        setFormError(`Could not save task: ${insertError.message}`)
-        setSaving(false)
-        return
-      }
-
-      setPageSuccess('Task added.')
+      nextAttachmentPath = uploadData?.path ?? filePath
     }
 
-    resetForm()
+    const wasReviewedBack = hasReviewerFeedbackStatus(activeTask.status)
+    const { error: updateError } = await supabase
+      .from('tasks')
+      .update({
+        completion_description: trimmedCompletion,
+        submission_attachment_url: nextAttachmentPath,
+        submitted_at: new Date().toISOString(),
+        ...getReviewResetPayload(activeTask.status),
+      })
+      .eq('id', activeTask.id)
+      .eq('intern_id', internId)
+      .in('status', ['pending', 'returned', 'rejected'])
+
+    if (updateError) {
+      setFormError(`Could not submit task completion: ${updateError.message}`)
+      setSaving(false)
+      return
+    }
+
+    setPageSuccess(
+      wasReviewedBack
+        ? 'Task completion resubmitted as pending for supervisor review.'
+        : 'Task completion submitted.',
+    )
     setSaving(false)
     setDialogOpen(false)
+    setAttachmentError('')
     setReloadCounter((count) => count + 1)
+  }
+
+  async function handleOpenAttachment(row) {
+    if (!supabase || !row.submission_attachment_url) return
+
+    setOpeningId(row.id)
+    setAttachmentError('')
+
+    const { data, error } = await supabase.storage
+      .from('attachments')
+      .createSignedUrl(row.submission_attachment_url, 300)
+
+    setOpeningId(null)
+
+    if (error || !data?.signedUrl) {
+      setAttachmentError(
+        error?.message || 'Could not generate a signed download link.',
+      )
+      return
+    }
+
+    setSignedUrlsById((prev) => ({ ...prev, [row.id]: data.signedUrl }))
+
+    const openedWindow = window.open(
+      data.signedUrl,
+      '_blank',
+      'noopener,noreferrer',
+    )
+    if (!openedWindow) {
+      setAttachmentError(
+        'Pop-up blocked by your browser. Use the direct signed link shown next to the attachment.',
+      )
+    }
   }
 
   return (
     <div className="max-w-6xl space-y-6">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1
-            id="main-content"
-            tabIndex={-1}
-            className="ledger-title text-[clamp(1.5rem,1.25rem+0.75vw,1.875rem)] font-semibold leading-[1.2] tracking-[-0.02em] text-ink outline-none"
-          >
-            Tasks
-          </h1>
-          <p className="mt-1.5 max-w-[60ch] text-sm leading-[1.55] text-ink-muted">
-            Log daily assigned tasks and track supervisor review status.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={openCreateDialog}
-          className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-[5px] bg-accent-solid px-4 py-2 text-sm font-medium text-on-accent hover:bg-accent-solid-hover"
+      <header>
+        <h1
+          id="main-content"
+          tabIndex={-1}
+          className="ledger-title text-[clamp(1.5rem,1.25rem+0.75vw,1.875rem)] font-semibold leading-[1.2] tracking-[-0.02em] text-ink outline-none"
         >
-          <PlusIcon className="size-4" />
-          <span>Add task</span>
-        </button>
+          Assigned Tasks
+        </h1>
+        <p className="mt-1.5 max-w-[64ch] text-sm leading-[1.55] text-ink-muted">
+          Review tasks assigned by your supervisor and submit your completion
+          notes and supporting files.
+        </p>
       </header>
 
       <div className={pageSuccess || listError ? 'space-y-3' : ''}>
@@ -247,10 +304,10 @@ export function TasksPage() {
               id="tasks-list-heading"
               className="text-base font-semibold text-ink"
             >
-              Submitted tasks
+              Tasks assigned to you
             </h2>
             <p className="mt-0.5 text-xs text-ink-muted">
-              Ordered by task date, newest first.
+              Ordered by nearest deadline first.
             </p>
           </div>
 
@@ -263,6 +320,12 @@ export function TasksPage() {
               <span>{statusCounts.pending} pending</span>
               <span aria-hidden="true" className="h-3 w-px bg-rule" />
               <span>{statusCounts.returned} returned</span>
+              {statusCounts.rejected > 0 ? (
+                <>
+                  <span aria-hidden="true" className="h-3 w-px bg-rule" />
+                  <span>{statusCounts.rejected} rejected</span>
+                </>
+              ) : null}
               <span aria-hidden="true" className="h-3 w-px bg-rule" />
               <span>{statusCounts.approved} approved</span>
             </div>
@@ -272,32 +335,21 @@ export function TasksPage() {
         {loadingList ? (
           <div className="flex items-center gap-3 px-5 py-12 text-sm text-ink-muted">
             <progress aria-label="Loading tasks" className="loading-spinner" />
-            <span>Loading tasks…</span>
+            <span>Loading assigned tasks…</span>
           </div>
         ) : items.length === 0 ? (
-          <div className="flex flex-col items-start gap-4 px-5 py-12 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-3.5">
-              <span className="mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-[5px] border border-rule bg-surface-subtle text-ink-muted">
-                <NavIcon name="tasks" className="size-4" />
-              </span>
-              <div>
-                <p className="text-sm font-semibold text-ink">
-                  No tasks logged yet
-                </p>
-                <p className="mt-1 text-sm text-ink-muted">
-                  Record your first daily internship task for supervisor review.
-                </p>
-              </div>
+          <div className="flex items-start gap-3.5 px-5 py-12">
+            <span className="mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-[5px] border border-rule bg-surface-subtle text-ink-muted">
+              <NavIcon name="tasks" className="size-4" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-ink">
+                No tasks assigned yet
+              </p>
+              <p className="mt-1 text-sm text-ink-muted">
+                Tasks assigned by your supervisor will appear here once posted.
+              </p>
             </div>
-
-            <button
-              type="button"
-              onClick={openCreateDialog}
-              className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-[5px] border border-rule bg-surface px-3.5 text-sm font-medium text-ink hover:bg-surface-subtle"
-            >
-              <PlusIcon className="size-4" />
-              <span>Add task</span>
-            </button>
           </div>
         ) : (
           <div
@@ -308,18 +360,21 @@ export function TasksPage() {
           >
             <table className="submission-table">
               <caption className="visually-hidden">
-                Submitted internship tasks ordered by newest date first
+                Supervisor-assigned tasks and completion submission status
               </caption>
               <thead>
                 <tr>
-                  <th scope="col" className="w-40">
-                    Task date
+                  <th scope="col">Task & instructions</th>
+                  <th scope="col" className="w-36">
+                    Deadline
                   </th>
-                  <th scope="col">Task</th>
+                  <th scope="col" className="w-28">
+                    Priority
+                  </th>
                   <th scope="col" className="w-36">
                     Status
                   </th>
-                  <th scope="col" className="col-action w-28">
+                  <th scope="col" className="col-action w-36">
                     Action
                   </th>
                 </tr>
@@ -327,19 +382,17 @@ export function TasksPage() {
               <tbody>
                 {items.map((row) => {
                   const editable = isEditableSubmissionStatus(row.status)
+                  const effectiveDeadline = row.deadline || row.task_date
+                  const signedUrl = signedUrlsById[row.id]
+                  const actionLabel = hasReviewerFeedbackStatus(row.status)
+                    ? 'Resubmit'
+                    : row.submitted_at
+                      ? 'Edit submission'
+                      : 'Submit work'
 
                   return (
                     <tr key={row.id}>
-                      <td data-label="Task date" className="whitespace-nowrap">
-                        <time
-                          dateTime={row.task_date}
-                          className="text-sm font-medium tabular-nums text-ink"
-                        >
-                          {formatCalendarDate(row.task_date)}
-                        </time>
-                      </td>
-
-                      <td data-label="Task">
+                      <td data-label="Task & instructions">
                         <div className="min-w-0">
                           <p className="font-medium text-ink">{row.title}</p>
                           {row.description ? (
@@ -347,28 +400,94 @@ export function TasksPage() {
                               {row.description}
                             </p>
                           ) : null}
-                          {row.status === 'returned' ? (
-                            <ReturnedRemarks remarks={row.reviewer_remarks} />
+
+                          {row.completion_description ||
+                          row.submission_attachment_url ? (
+                            <div className="mt-2.5 rounded-[5px] border border-rule bg-surface-subtle px-3 py-2 text-xs">
+                              <p className="font-semibold text-ink">
+                                Your submission
+                              </p>
+                              {row.completion_description ? (
+                                <p className="mt-1 whitespace-pre-line text-ink-muted break-words">
+                                  {row.completion_description}
+                                </p>
+                              ) : null}
+                              {row.submission_attachment_url ? (
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={openingId === row.id}
+                                    onClick={() => handleOpenAttachment(row)}
+                                    className="inline-flex min-h-7 items-center gap-1 font-medium text-accent underline underline-offset-4 hover:text-accent-hover disabled:opacity-60"
+                                  >
+                                    <PaperclipIcon className="size-3.5" />
+                                    <span>
+                                      {openingId === row.id
+                                        ? 'Generating link…'
+                                        : 'View attachment'}
+                                    </span>
+                                  </button>
+                                  <FileNameLabel
+                                    objectPath={row.submission_attachment_url}
+                                  />
+                                  {signedUrl ? (
+                                    <a
+                                      href={signedUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="font-medium text-ink underline underline-offset-2 hover:text-accent"
+                                    >
+                                      Open signed link
+                                    </a>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+
+                          {hasReviewerFeedbackStatus(row.status) ? (
+                            <ReturnedRemarks
+                              remarks={row.reviewer_remarks}
+                              status={row.status}
+                            />
                           ) : null}
                         </div>
                       </td>
 
+                      <td data-label="Deadline" className="whitespace-nowrap">
+                        <time
+                          dateTime={effectiveDeadline}
+                          className="text-sm font-medium tabular-nums text-ink"
+                        >
+                          {formatCalendarDate(effectiveDeadline)}
+                        </time>
+                      </td>
+
+                      <td data-label="Priority" className="whitespace-nowrap">
+                        <PriorityBadge priority={row.priority} />
+                      </td>
+
                       <td data-label="Status">
-                        <StatusBadge status={row.status} />
+                        <div className="flex flex-col items-start gap-1">
+                          <StatusBadge status={row.status} />
+                          <span className="text-[0.6875rem] text-ink-muted">
+                            {row.submitted_at ? 'Submitted' : 'Not submitted'}
+                          </span>
+                        </div>
                       </td>
 
                       <td data-label="Action" className="col-action">
                         {editable ? (
                           <button
                             type="button"
-                            onClick={() => openEditDialog(row)}
+                            onClick={() => openSubmissionDialog(row)}
                             className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
                           >
                             <EditIcon className="size-3.5" />
-                            <span>Edit</span>
+                            <span>{actionLabel}</span>
                             <span className="visually-hidden">
                               {' '}
-                              {row.title}
+                              for {row.title}
                             </span>
                           </button>
                         ) : (
@@ -386,64 +505,139 @@ export function TasksPage() {
 
       <SubmissionDialog
         open={dialogOpen}
-        title={editingRow ? 'Edit task' : 'Add task'}
+        title={
+          hasReviewerFeedbackStatus(activeTask?.status)
+            ? 'Resubmit task completion'
+            : activeTask?.submitted_at
+              ? 'Edit task submission'
+              : 'Submit task completion'
+        }
         description={
-          editingRow?.status === 'returned'
-            ? 'Saving changes resets this task to Pending for supervisor re-review.'
-            : 'Record the task date, title, and details for supervisor verification.'
+          hasReviewerFeedbackStatus(activeTask?.status)
+            ? 'Submitting updates resets this task to Pending for supervisor re-review.'
+            : 'Describe your completed work and attach an optional file for your supervisor.'
         }
         onClose={handleCloseDialog}
       >
+        {activeTask ? (
+          <div className="mb-4 rounded-[5px] border border-rule bg-surface-subtle px-3.5 py-3 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-ink">
+                {activeTask.title}
+              </p>
+              <PriorityBadge priority={activeTask.priority} />
+            </div>
+            {activeTask.description ? (
+              <p className="mt-1.5 whitespace-pre-line text-ink-muted">
+                {activeTask.description}
+              </p>
+            ) : null}
+            <p className="mt-2 tabular-nums text-ink-muted">
+              Deadline:{' '}
+              <span className="font-medium text-ink">
+                {formatCalendarDate(
+                  activeTask.deadline || activeTask.task_date,
+                )}
+              </span>
+            </p>
+          </div>
+        ) : null}
+
         <div className={formError ? 'mb-4' : ''}>
           <AlertMessage message={formError} variant="error" />
         </div>
 
-        <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
+        <form
+          ref={formRef}
+          onSubmit={handleSubmitCompletion}
+          className="space-y-4"
+        >
           <FormField
-            inputRef={titleInputRef}
-            id="task-title"
-            name="title"
-            label="Title"
-            type="text"
+            inputRef={completionInputRef}
+            id="task-completion-description"
+            name="completion_description"
+            label="Completion description"
+            multiline
+            rows={4}
             autoFocus
             required
-            maxLength={200}
-            placeholder="e.g. Draft onboarding documentation"
-            validationMessage="Enter a title for this task."
-            value={title}
+            placeholder="Summarize what you completed and any notes for your supervisor."
+            validationMessage="Enter a completion description before submitting."
+            value={completionDescription}
             onChange={(event) => {
-              setTitle(event.target.value)
+              setCompletionDescription(event.target.value)
               if (formError) setFormError('')
             }}
           />
 
-          <FormField
-            id="task-date"
-            name="task_date"
-            label="Task date"
-            type="date"
-            required
-            validationMessage="Choose the date for this task."
-            value={taskDate}
-            onChange={(event) => {
-              setTaskDate(event.target.value)
-              if (formError) setFormError('')
-            }}
-          />
+          <div className="field-group flex flex-col gap-1.5">
+            <label
+              htmlFor="task-submission-attachment"
+              className="text-sm font-medium leading-[1.4] text-ink"
+            >
+              Submission attachment (optional)
+            </label>
+            <span
+              id="task-submission-attachment-hint"
+              className="text-xs leading-[1.4] text-ink-muted"
+            >
+              Uploaded privately to your intern folder and opened via signed
+              URLs.
+            </span>
 
-          <FormField
-            id="task-description"
-            name="description"
-            label="Description"
-            multiline
-            rows={3}
-            placeholder="Describe the work performed or key task details."
-            value={description}
-            onChange={(event) => {
-              setDescription(event.target.value)
-              if (formError) setFormError('')
-            }}
-          />
+            {activeTask?.submission_attachment_url ? (
+              <div className="my-1 flex flex-wrap items-center justify-between gap-2 rounded-[5px] border border-rule bg-surface-subtle px-3 py-2 text-xs text-ink">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="shrink-0">Current file:</span>
+                  <FileNameLabel
+                    objectPath={activeTask.submission_attachment_url}
+                  />
+                </div>
+                <label className="branded-checkbox-label inline-flex items-center gap-2 font-medium text-ink-muted">
+                  <input
+                    type="checkbox"
+                    checked={removeExistingAttachment}
+                    disabled={Boolean(selectedFile)}
+                    onChange={(event) =>
+                      setRemoveExistingAttachment(event.target.checked)
+                    }
+                    className="branded-checkbox size-4"
+                  />
+                  <span>Remove current file</span>
+                </label>
+              </div>
+            ) : null}
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              <input
+                ref={fileInputRef}
+                id="task-submission-attachment"
+                name="submission_attachment"
+                type="file"
+                aria-invalid="false"
+                aria-describedby="task-submission-attachment-hint"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null
+                  setSelectedFile(file)
+                  if (file) setRemoveExistingAttachment(false)
+                  if (formError) setFormError('')
+                }}
+                className="form-control min-h-11 flex-1 rounded-[5px] border border-input-border bg-surface px-2.5 py-2 text-xs text-ink file:me-3 file:min-h-8 file:cursor-pointer file:rounded-[4px] file:border file:border-rule file:bg-surface-subtle file:px-3 file:py-1 file:text-xs file:font-medium file:text-ink hover:file:bg-canvas"
+              />
+              {selectedFile ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedFile(null)
+                    if (fileInputRef.current) fileInputRef.current.value = ''
+                  }}
+                  className="inline-flex min-h-10 items-center justify-center rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink-muted hover:bg-surface-subtle hover:text-ink"
+                >
+                  Clear file
+                </button>
+              ) : null}
+            </div>
+          </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2.5 border-t border-rule pt-4">
             <button
@@ -458,7 +652,11 @@ export function TasksPage() {
               disabled={saving}
               className="inline-flex min-h-10 items-center justify-center rounded-[5px] bg-accent-solid px-4 text-sm font-medium text-on-accent hover:bg-accent-solid-hover disabled:cursor-not-allowed disabled:opacity-65"
             >
-              {saving ? 'Saving…' : editingRow ? 'Save changes' : 'Add task'}
+              {saving
+                ? 'Submitting…'
+                : hasReviewerFeedbackStatus(activeTask?.status)
+                  ? 'Resubmit completion'
+                  : 'Submit completion'}
             </button>
           </div>
         </form>

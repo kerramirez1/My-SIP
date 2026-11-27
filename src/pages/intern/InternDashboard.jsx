@@ -13,6 +13,7 @@ import {
   buildInternDashboardMetrics,
   getRequiredInternshipHours,
 } from '../../lib/internDashboardUtils'
+import { hasReviewerFeedbackStatus } from '../../lib/submissionHelpers'
 import { supabase } from '../../lib/supabaseClient'
 import { useDocumentTitle } from '../../lib/useDocumentTitle'
 import { formatCalendarDate, getTodayIsoDate } from '../../lib/weekUtils'
@@ -39,6 +40,13 @@ function getDayStatusMeta(status) {
       textClass: 'text-success',
     }
   }
+  if (status === 'rejected') {
+    return {
+      label: 'Rejected',
+      dotClass: 'bg-rejected-bg',
+      textClass: 'text-error',
+    }
+  }
   if (status === 'returned') {
     return {
       label: 'Returned',
@@ -60,6 +68,7 @@ export function InternDashboard() {
   const internId = profile?.id
   const todayIso = getTodayIsoDate()
   const requiredHours = getRequiredInternshipHours(
+    profile?.required_hours,
     import.meta.env.VITE_REQUIRED_INTERNSHIP_HOURS,
   )
 
@@ -77,7 +86,7 @@ export function InternDashboard() {
       supabase
         .from('weekly_attendance')
         .select(
-          'id, attendance_date, time_in, time_out, week_of, status, reviewer_remarks, reviewed_at, created_at, updated_at',
+          'id, attendance_date, time_in, time_out, break_minutes, week_of, status, reviewer_remarks, reviewed_at, created_at, updated_at',
         )
         .eq('intern_id', internId)
         .order('attendance_date', { ascending: false }),
@@ -91,10 +100,10 @@ export function InternDashboard() {
       supabase
         .from('tasks')
         .select(
-          'id, title, task_date, status, reviewer_remarks, reviewed_at, created_at, updated_at',
+          'id, title, task_date, deadline, priority, submitted_at, status, reviewer_remarks, reviewed_at, created_at, updated_at',
         )
         .eq('intern_id', internId)
-        .order('task_date', { ascending: true }),
+        .order('deadline', { ascending: true, nullsFirst: false }),
     ]).then(([attendanceRes, accomplishmentsRes, tasksRes]) => {
       if (!active) return
 
@@ -266,64 +275,64 @@ export function InternDashboard() {
                 aria-label="Key internship metrics"
                 className="dashboard-metric-grid bg-surface"
               >
-              <div className="dashboard-metric-cell">
-                <dt className="text-xs font-medium text-ink-muted">
-                  Approved hours
-                </dt>
-                <dd className="text-lg font-semibold tabular-nums text-ink">
-                  {formatDurationMinutes(metrics.approvedAttendanceMinutes)}
-                </dd>
-                <dd className="text-xs tabular-nums text-ink-muted">
-                  {metrics.approvedAttendanceCount > 0
-                    ? `${formatDecimalHours(metrics.approvedAttendanceMinutes)} from ${metrics.approvedAttendanceCount} approved ${metrics.approvedAttendanceCount === 1 ? 'entry' : 'entries'}`
-                    : 'No approved attendance yet'}
-                </dd>
-              </div>
+                <div className="dashboard-metric-cell">
+                  <dt className="text-xs font-medium text-ink-muted">
+                    Approved hours
+                  </dt>
+                  <dd className="text-lg font-semibold tabular-nums text-ink">
+                    {formatDurationMinutes(metrics.approvedAttendanceMinutes)}
+                  </dd>
+                  <dd className="text-xs tabular-nums text-ink-muted">
+                    {metrics.approvedAttendanceCount > 0
+                      ? `${formatDecimalHours(metrics.approvedAttendanceMinutes)} from ${metrics.approvedAttendanceCount} approved ${metrics.approvedAttendanceCount === 1 ? 'entry' : 'entries'}`
+                      : 'No approved attendance yet'}
+                  </dd>
+                </div>
 
-              <div className="dashboard-metric-cell">
-                <dt className="text-xs font-medium text-ink-muted">
-                  Remaining required hours
-                </dt>
-                <dd className="text-lg font-semibold tabular-nums text-ink">
-                  {formatDurationMinutes(metrics.remainingMinutes)}
-                </dd>
-                <dd className="text-xs tabular-nums text-ink-muted">
-                  {metrics.isGoalComplete
-                    ? 'Required hour target met'
-                    : `${formatDecimalHours(metrics.remainingMinutes)} of ${metrics.requiredHours} hr target`}
-                </dd>
-              </div>
+                <div className="dashboard-metric-cell">
+                  <dt className="text-xs font-medium text-ink-muted">
+                    Remaining required hours
+                  </dt>
+                  <dd className="text-lg font-semibold tabular-nums text-ink">
+                    {formatDurationMinutes(metrics.remainingMinutes)}
+                  </dd>
+                  <dd className="text-xs tabular-nums text-ink-muted">
+                    {metrics.isGoalComplete
+                      ? 'Required hour target met'
+                      : `${formatDecimalHours(metrics.remainingMinutes)} of ${metrics.requiredHours} hr target`}
+                  </dd>
+                </div>
 
-              <div className="dashboard-metric-cell">
-                <dt className="text-xs font-medium text-ink-muted">
-                  Pending submissions
-                </dt>
-                <dd className="text-lg font-semibold tabular-nums text-ink">
-                  {metrics.pendingSubmissionsCount}
-                </dd>
-                <dd className="text-xs tabular-nums text-ink-muted">
-                  {metrics.returnedSubmissionsCount > 0
-                    ? `${metrics.returnedSubmissionsCount} returned for revision`
-                    : metrics.pendingSubmissionsCount > 0
-                      ? 'Awaiting supervisor review'
-                      : 'No items awaiting review'}
-                </dd>
-              </div>
+                <div className="dashboard-metric-cell">
+                  <dt className="text-xs font-medium text-ink-muted">
+                    Pending submissions
+                  </dt>
+                  <dd className="text-lg font-semibold tabular-nums text-ink">
+                    {metrics.pendingSubmissionsCount}
+                  </dd>
+                  <dd className="text-xs tabular-nums text-ink-muted">
+                    {metrics.needsRevisionCount > 0
+                      ? `${metrics.returnedSubmissionsCount} returned, ${metrics.rejectedSubmissionsCount} rejected`
+                      : metrics.pendingSubmissionsCount > 0
+                        ? 'Awaiting supervisor review'
+                        : 'No items awaiting review'}
+                  </dd>
+                </div>
 
-              <div className="dashboard-metric-cell">
-                <dt className="text-xs font-medium text-ink-muted">
-                  Completed tasks
-                </dt>
-                <dd className="text-lg font-semibold tabular-nums text-ink">
-                  {metrics.completedTasksCount}
-                </dd>
-                <dd className="text-xs tabular-nums text-ink-muted">
-                  {metrics.totalTasksCount > 0
-                    ? `of ${metrics.totalTasksCount} submitted ${metrics.totalTasksCount === 1 ? 'task' : 'tasks'}`
-                    : 'No tasks submitted yet'}
-                </dd>
-              </div>
-            </dl>
+                <div className="dashboard-metric-cell">
+                  <dt className="text-xs font-medium text-ink-muted">
+                    Completed tasks
+                  </dt>
+                  <dd className="text-lg font-semibold tabular-nums text-ink">
+                    {metrics.completedTasksCount}
+                  </dd>
+                  <dd className="text-xs tabular-nums text-ink-muted">
+                    {metrics.totalTasksCount > 0
+                      ? `of ${metrics.totalTasksCount} assigned ${metrics.totalTasksCount === 1 ? 'task' : 'tasks'}`
+                      : 'No tasks assigned yet'}
+                  </dd>
+                </div>
+              </dl>
             </div>
           </section>
 
@@ -478,8 +487,8 @@ export function InternDashboard() {
                       </p>
                       <p className="mt-1 text-xs leading-relaxed text-ink-muted">
                         {metrics.totalTasksCount > 0
-                          ? 'All logged tasks have been approved by your supervisor.'
-                          : 'Record daily assigned tasks to track upcoming dates and supervisor review.'}
+                          ? 'All assigned tasks have been approved by your supervisor.'
+                          : 'Tasks assigned by your supervisor will appear here with their deadlines.'}
                       </p>
                     </div>
                   </div>
@@ -504,10 +513,10 @@ export function InternDashboard() {
                           </Link>
                           <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs tabular-nums">
                             <time
-                              dateTime={task.task_date}
+                              dateTime={task.effectiveDeadline}
                               className="text-ink-muted"
                             >
-                              {formatCalendarDate(task.task_date)}
+                              {formatCalendarDate(task.effectiveDeadline)}
                             </time>
                             <span
                               aria-hidden="true"
@@ -515,18 +524,21 @@ export function InternDashboard() {
                             />
                             <span
                               className={
-                                DEADLINE_TONE_CLASSES[task.deadline.tone]
+                                DEADLINE_TONE_CLASSES[task.deadlineBadge.tone]
                               }
                             >
-                              {task.deadline.label}
+                              {task.deadlineBadge.label}
                             </span>
                           </div>
                         </div>
                         <StatusBadge status={task.status} />
                       </div>
 
-                      {task.status === 'returned' ? (
-                        <ReturnedRemarks remarks={task.reviewer_remarks} />
+                      {hasReviewerFeedbackStatus(task.status) ? (
+                        <ReturnedRemarks
+                          remarks={task.reviewer_remarks}
+                          status={task.status}
+                        />
                       ) : null}
                     </li>
                   ))}
@@ -581,7 +593,7 @@ export function InternDashboard() {
                   </p>
                   <p className="mt-1 text-sm text-ink-muted">
                     Start by logging your daily attendance, adding a weekly
-                    accomplishment, or recording an assigned task.
+                    accomplishment, or checking assigned tasks.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -648,8 +660,11 @@ export function InternDashboard() {
                             <p className="text-sm font-medium text-ink">
                               {item.title}
                             </p>
-                            {item.status === 'returned' ? (
-                              <ReturnedRemarks remarks={item.reviewerRemarks} />
+                            {hasReviewerFeedbackStatus(item.status) ? (
+                              <ReturnedRemarks
+                                remarks={item.reviewerRemarks}
+                                status={item.status}
+                              />
                             ) : null}
                           </div>
                         </td>

@@ -13,6 +13,7 @@ import { StatusBadge } from '../../components/StatusBadge'
 import { SubmissionDialog } from '../../components/SubmissionDialog'
 import { useAuth } from '../../context/useAuth'
 import {
+  DEFAULT_BREAK_MINUTES,
   computeElapsedMinutes,
   formatDecimalHours,
   formatDurationMinutes,
@@ -21,6 +22,7 @@ import {
 } from '../../lib/attendanceUtils'
 import {
   getReviewResetPayload,
+  hasReviewerFeedbackStatus,
   isEditableSubmissionStatus,
 } from '../../lib/submissionHelpers'
 import { supabase } from '../../lib/supabaseClient'
@@ -106,11 +108,17 @@ export function WeeklyAttendancePage() {
   useFormValidationSync(formRef)
 
   const formWeekOf = getMondayOfWeek(attendanceDate)
-  const previewMinutes = computeElapsedMinutes(timeIn, timeOut)
+  const activeBreakMinutes = editingRow?.break_minutes ?? DEFAULT_BREAK_MINUTES
+  const rawPreviewMinutes = computeElapsedMinutes(timeIn, timeOut, 0)
+  const previewMinutes = computeElapsedMinutes(
+    timeIn,
+    timeOut,
+    activeBreakMinutes,
+  )
   const isTimeRangeInvalid =
     Boolean(timeIn && timeOut) &&
-    previewMinutes !== null &&
-    previewMinutes < 0
+    rawPreviewMinutes !== null &&
+    rawPreviewMinutes < 0
 
   const currentQueryKey =
     internId && selectedWeekOf
@@ -125,7 +133,7 @@ export function WeeklyAttendancePage() {
     supabase
       .from('weekly_attendance')
       .select(
-        'id, intern_id, attendance_date, time_in, time_out, week_of, status, reviewed_by, reviewer_remarks, reviewed_at, created_at',
+        'id, intern_id, attendance_date, time_in, time_out, break_minutes, week_of, status, reviewed_by, reviewer_remarks, reviewed_at, created_at',
       )
       .eq('intern_id', internId)
       .eq('week_of', selectedWeekOf)
@@ -153,16 +161,21 @@ export function WeeklyAttendancePage() {
 
   const summary = items.reduce(
     (acc, row) => {
-      const elapsed = computeElapsedMinutes(row.time_in, row.time_out)
+      const elapsed = computeElapsedMinutes(
+        row.time_in,
+        row.time_out,
+        row.break_minutes ?? DEFAULT_BREAK_MINUTES,
+      )
       if (elapsed !== null && elapsed > 0) {
         acc.totalMinutes += elapsed
       }
       if (row.status === 'approved') acc.approved += 1
+      else if (row.status === 'rejected') acc.rejected += 1
       else if (row.status === 'returned') acc.returned += 1
       else acc.pending += 1
       return acc
     },
-    { totalMinutes: 0, pending: 0, returned: 0, approved: 0 },
+    { totalMinutes: 0, pending: 0, returned: 0, rejected: 0, approved: 0 },
   )
 
   function resetForm(targetDate = filterDate) {
@@ -222,7 +235,7 @@ export function WeeklyAttendancePage() {
       return
     }
 
-    const elapsedMinutes = computeElapsedMinutes(timeIn, timeOut)
+    const elapsedMinutes = computeElapsedMinutes(timeIn, timeOut, 0)
     if (elapsedMinutes === null) {
       setFormError('Please enter valid wall-clock times for time in and time out.')
       return
@@ -244,7 +257,7 @@ export function WeeklyAttendancePage() {
     setPageSuccess('')
 
     if (editingRow) {
-      const wasReturned = editingRow.status === 'returned'
+      const wasReviewedBack = hasReviewerFeedbackStatus(editingRow.status)
       const { error: updateError } = await supabase
         .from('weekly_attendance')
         .update({
@@ -256,7 +269,7 @@ export function WeeklyAttendancePage() {
         })
         .eq('id', editingRow.id)
         .eq('intern_id', internId)
-        .in('status', ['pending', 'returned'])
+        .in('status', ['pending', 'returned', 'rejected'])
 
       if (updateError) {
         setFormError(
@@ -269,7 +282,7 @@ export function WeeklyAttendancePage() {
       }
 
       setPageSuccess(
-        wasReturned
+        wasReviewedBack
           ? 'Attendance entry updated and resubmitted as pending.'
           : 'Attendance entry updated.',
       )
@@ -436,8 +449,9 @@ export function WeeklyAttendancePage() {
               </span>
               {!loadingList && items.length > 0 ? (
                 <span className="text-xs tabular-nums text-ink-muted">
-                  {summary.pending} pending, {summary.returned} returned,{' '}
-                  {summary.approved} approved
+                  {summary.pending} pending, {summary.returned} returned
+                  {summary.rejected > 0 ? `, ${summary.rejected} rejected` : ''}
+                  , {summary.approved} approved
                 </span>
               ) : null}
             </dd>
@@ -530,6 +544,7 @@ export function WeeklyAttendancePage() {
                   const elapsed = computeElapsedMinutes(
                     row.time_in,
                     row.time_out,
+                    row.break_minutes ?? DEFAULT_BREAK_MINUTES,
                   )
                   const weekday = getWeekdayLabel(row.attendance_date)
 
@@ -583,8 +598,11 @@ export function WeeklyAttendancePage() {
                       <td data-label="Status">
                         <div className="min-w-0">
                           <StatusBadge status={row.status} />
-                          {row.status === 'returned' ? (
-                            <ReturnedRemarks remarks={row.reviewer_remarks} />
+                          {hasReviewerFeedbackStatus(row.status) ? (
+                            <ReturnedRemarks
+                              remarks={row.reviewer_remarks}
+                              status={row.status}
+                            />
                           ) : null}
                         </div>
                       </td>
@@ -621,7 +639,7 @@ export function WeeklyAttendancePage() {
         open={dialogOpen}
         title={editingRow ? 'Edit entry' : 'Add entry'}
         description={
-          editingRow?.status === 'returned'
+          hasReviewerFeedbackStatus(editingRow?.status)
             ? 'Saving changes resets this entry to Pending for supervisor re-review.'
             : 'Entries are grouped automatically under the Monday of the selected date.'
         }
@@ -696,7 +714,9 @@ export function WeeklyAttendancePage() {
           </div>
 
           <div className="flex items-center justify-between rounded-[5px] border border-rule bg-surface-subtle px-3.5 py-2.5 text-xs">
-            <span className="font-medium text-ink-muted">Computed hours</span>
+            <span className="font-medium text-ink-muted">
+              Rendered hours ({activeBreakMinutes} min break deducted)
+            </span>
             {isTimeRangeInvalid ? (
               <span className="font-medium text-error">
                 Time out cannot be earlier than time in

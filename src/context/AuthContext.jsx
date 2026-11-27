@@ -45,7 +45,9 @@ export function AuthProvider({ children }) {
 
     supabase
       .from('profiles')
-      .select('id, full_name, role, supervisor_id, student_id_no, company_name')
+      .select(
+        'id, full_name, role, supervisor_id, student_id_no, company_name, required_hours, internship_start_date, school_name, course',
+      )
       .eq('id', targetUserId)
       .single()
       .then(({ data, error }) => {

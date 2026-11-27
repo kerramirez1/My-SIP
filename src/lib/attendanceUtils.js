@@ -1,5 +1,7 @@
 const TIME_REGEX = /^(\d{1,2}):(\d{2})(?::(\d{2}))?/
 
+export const DEFAULT_BREAK_MINUTES = 60
+
 function parseWallClockMinutes(timeStr) {
   const match = TIME_REGEX.exec(String(timeStr ?? '').trim())
   if (!match) return null
@@ -65,14 +67,21 @@ export function formatWallClockTime(timeStr) {
 }
 
 /**
- * Computes signed elapsed minutes between two wall-clock time strings (`timeOut - timeIn`).
- * Returns null if either value is missing or invalid; negative if timeOut is earlier than timeIn.
+ * Computes rendered minutes between two wall-clock time strings:
+ * `time_out - time_in - break_minutes`.
+ * Returns null if either time is missing/invalid.
+ * Returns a negative number if `timeOut` is earlier than `timeIn`.
+ * Clamps non-negative spans at 0 after subtracting `breakMinutes`.
+ *
  * @param {string | null | undefined} timeIn
  * @param {string | null | undefined} timeOut
+ * @param {number} [breakMinutes=0]
  * @returns {number | null}
  */
-export function computeElapsedMinutes(timeIn, timeOut) {
+export function computeElapsedMinutes(timeIn, timeOut, breakMinutes = 0) {
   if (!timeIn || !timeOut) return null
+
+  let rawMinutes = null
 
   if (typeof globalThis.Temporal?.PlainTime?.from === 'function') {
     try {
@@ -82,16 +91,24 @@ export function computeElapsedMinutes(timeIn, timeOut) {
         largestUnit: 'minute',
         smallestUnit: 'minute',
       })
-      return diff.minutes
+      rawMinutes = diff.minutes
     } catch {
       return null
     }
+  } else {
+    const start = parseWallClockMinutes(timeIn)
+    const end = parseWallClockMinutes(timeOut)
+    if (!start || !end) return null
+    rawMinutes = end.totalMinutes - start.totalMinutes
   }
 
-  const start = parseWallClockMinutes(timeIn)
-  const end = parseWallClockMinutes(timeOut)
-  if (!start || !end) return null
-  return end.totalMinutes - start.totalMinutes
+  if (rawMinutes < 0) return rawMinutes
+
+  const safeBreak = Number.isFinite(Number(breakMinutes))
+    ? Math.max(0, Number(breakMinutes))
+    : 0
+
+  return Math.max(0, rawMinutes - safeBreak)
 }
 
 /**
