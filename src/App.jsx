@@ -10,6 +10,9 @@ import { InternDashboard } from './pages/intern/InternDashboard'
 import { TasksPage } from './pages/intern/TasksPage'
 import { WeeklyAttendancePage } from './pages/intern/WeeklyAttendancePage'
 import { SupervisorDashboard } from './pages/supervisor/SupervisorDashboard'
+import { SupervisorHistoryPage } from './pages/supervisor/SupervisorHistoryPage'
+import { SupervisorInternsPage } from './pages/supervisor/SupervisorInternsPage'
+import { SupervisorReviewsPage } from './pages/supervisor/SupervisorReviewsPage'
 
 export function App() {
   return (
@@ -38,6 +41,18 @@ export function App() {
           <Route element={<ProtectedRoute allowedRole="supervisor" />}>
             <Route element={<DashboardLayout />}>
               <Route path="/supervisor" element={<SupervisorDashboard />} />
+              <Route
+                path="/supervisor/interns"
+                element={<SupervisorInternsPage />}
+              />
+              <Route
+                path="/supervisor/reviews"
+                element={<SupervisorReviewsPage />}
+              />
+              <Route
+                path="/supervisor/history"
+                element={<SupervisorHistoryPage />}
+              />
             </Route>
           </Route>
 

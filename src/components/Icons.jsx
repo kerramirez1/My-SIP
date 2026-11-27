@@ -45,6 +45,45 @@ export function NavIcon({ name, className = 'size-4 shrink-0' }) {
           <path d="M10.25 6.75h5.5M4.25 13.25l1.5 1.5 2.5-2.75M10.25 13.5h5.5" strokeLinecap="square" />
         </svg>
       )
+    case 'interns':
+      return (
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 20 20"
+          className={className}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.65"
+        >
+          <circle cx="7.75" cy="6.75" r="2.5" />
+          <path
+            d="M3.25 16.25c0-2.5 2-4.25 4.5-4.25s4.5 1.75 4.5 4.25"
+            strokeLinecap="square"
+          />
+          <path
+            d="M13.25 4.75a2.25 2.25 0 0 1 0 4.5M14.25 12.25c1.85.4 3 1.75 3 4"
+            strokeLinecap="square"
+          />
+        </svg>
+      )
+    case 'history':
+      return (
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 20 20"
+          className={className}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.65"
+        >
+          <path d="M4.75 5.25v3h3" strokeLinecap="square" />
+          <path
+            d="M4.95 8.1A5.75 5.75 0 1 1 6.1 13.7"
+            strokeLinecap="square"
+          />
+          <path d="M10.5 7v3.25l2.25 1.5" strokeLinecap="square" />
+        </svg>
+      )
     case 'dashboard':
     default:
       return (

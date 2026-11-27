@@ -31,6 +31,9 @@ export const ROLE_CONFIG = {
         icon: 'dashboard',
         end: true,
       },
+      { to: '/supervisor/interns', label: 'My Interns', icon: 'interns' },
+      { to: '/supervisor/reviews', label: 'Pending Reviews', icon: 'tasks' },
+      { to: '/supervisor/history', label: 'Review History', icon: 'history' },
     ],
   },
   coordinator: {
