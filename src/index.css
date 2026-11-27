@@ -832,18 +832,61 @@ dialog.form-dialog[open]:where(:not([data-closing])) {
   text-wrap: balance;
 }
 
-.submission-table tbody td {
+.submission-table tbody :is(th, td) {
   text-align: start;
   border-block-end: 1px solid var(--color-rule);
   padding: 1rem 1.25rem;
   vertical-align: top;
 }
 
+.submission-table tbody th[scope="row"] {
+  position: sticky;
+  inset-inline-start: 0;
+  background-color: var(--color-surface);
+  font-weight: 500;
+}
+
+.submission-table tfoot :is(th, td) {
+  text-align: start;
+  border-block-start: 2px solid var(--color-rule);
+  background-color: var(--color-surface-subtle);
+  padding: 0.875rem 1.25rem;
+  vertical-align: middle;
+}
+
+.submission-table tfoot th[scope="row"] {
+  position: sticky;
+  inset-inline-start: 0;
+  background-color: var(--color-surface-subtle);
+  font-weight: 600;
+}
+
+.submission-table.is-compact thead th {
+  padding: 0.75rem 0.875rem;
+}
+
+.submission-table.is-compact :is(tbody, tfoot) :is(th, td) {
+  padding: 0.875rem 0.875rem;
+}
+
+.submission-table.is-compact :is(thead, tbody, tfoot) tr > :first-child {
+  padding-inline-start: 1.25rem;
+}
+
+.submission-table.is-compact :is(thead, tbody, tfoot) tr > :last-child {
+  padding-inline-end: 1.25rem;
+}
+
 .submission-table :is(th, td).col-action {
   text-align: end;
 }
 
-.submission-table tbody tr:last-child td {
+.submission-table :is(th, td).col-num {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.submission-table tbody tr:last-child :is(th, td) {
   border-block-end: 0;
 }
 
@@ -852,7 +895,8 @@ dialog.form-dialog[open]:where(:not([data-closing])) {
     transition: background-color 120ms ease-out;
   }
 
-  .submission-table tbody tr:hover {
+  .submission-table tbody tr:hover,
+  .submission-table tbody tr:hover th[scope="row"] {
     background-color: var(--color-surface-subtle);
   }
 }
@@ -861,6 +905,7 @@ dialog.form-dialog[open]:where(:not([data-closing])) {
   .submission-table,
   .submission-table thead,
   .submission-table tbody,
+  .submission-table tfoot,
   .submission-table tr,
   .submission-table th,
   .submission-table td {
@@ -871,34 +916,53 @@ dialog.form-dialog[open]:where(:not([data-closing])) {
     display: none;
   }
 
-  .submission-table tbody tr {
+  .submission-table :is(tbody, tfoot) tr {
     border-block-end: 1px solid var(--color-rule);
     background-color: var(--color-surface);
   }
 
-  .submission-table tbody tr:last-child {
+  .submission-table tfoot tr {
+    border-block-start: 2px solid var(--color-rule);
+    background-color: var(--color-surface-subtle);
+  }
+
+  .submission-table tbody tr:last-child,
+  .submission-table tfoot tr:last-child {
     border-block-end: 0;
   }
 
-  .submission-table tbody td {
+  .submission-table :is(tbody, tfoot) th[scope="row"] {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 2;
+    padding: 0.75rem 1rem;
+    border-block-end: 1px solid var(--color-rule);
+    background-color: var(--color-surface-subtle);
+    font-weight: 600;
+  }
+
+  .submission-table :is(tbody, tfoot) td,
+  .submission-table.is-compact :is(tbody, tfoot) td {
     display: grid;
-    grid-template-columns: 7.5rem 1fr;
+    grid-template-columns: 8.5rem 1fr;
     gap: 0.75rem;
     padding: 0.75rem 1rem;
     text-align: start;
+    border-block-start: 0;
     border-block-end: 1px solid color-mix(in oklab, var(--color-rule) 55%, transparent);
   }
 
-  .submission-table tbody td.col-action {
+  .submission-table :is(tbody, tfoot) td.col-action,
+  .submission-table :is(tbody, tfoot) td.col-num {
     text-align: start;
     justify-items: start;
   }
 
-  .submission-table tbody td:last-child {
+  .submission-table :is(tbody, tfoot) td:last-child {
     border-block-end: 0;
   }
 
-  .submission-table tbody td[data-label]::before {
+  .submission-table :is(tbody, tfoot) td[data-label]::before {
     content: attr(data-label);
     font-size: 0.75rem;
     font-weight: 600;

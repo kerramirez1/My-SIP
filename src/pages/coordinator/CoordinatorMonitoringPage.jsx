@@ -49,6 +49,32 @@ const DEADLINE_TONE_CLASSES = {
   upcoming: 'text-ink-muted',
 }
 
+function SelectChevronIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 20 20"
+      className="pointer-events-none size-4 text-ink-muted"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.65"
+    >
+      <path d="M5.75 8 10 12.25 14.25 8" strokeLinecap="square" />
+    </svg>
+  )
+}
+
+function getAttentionFlagClass(flag) {
+  const lower = flag.toLowerCase()
+  if (lower.includes('overdue') || lower.includes('returned')) {
+    return 'border-error-border/45 bg-error-tint text-error'
+  }
+  if (lower.includes('pending')) {
+    return 'border-accent/35 bg-accent-tint text-accent'
+  }
+  return 'border-rule bg-surface-subtle text-ink-muted'
+}
+
 function PriorityBadge({ priority }) {
   const meta = PRIORITY_META[priority] ?? PRIORITY_META.medium
   return (
@@ -249,6 +275,30 @@ export function CoordinatorMonitoringPage() {
   const hasActiveFilters =
     typeFilter !== 'all' || statusFilter !== 'all' || internFilter !== 'all'
 
+  const typeCounts = useMemo(() => {
+    const counts = {
+      all: allSubmissions.length,
+      attendance: 0,
+      accomplishments: 0,
+      tasks: 0,
+    }
+    for (const item of allSubmissions) {
+      if (item.kind in counts) counts[item.kind] += 1
+    }
+    return counts
+  }, [allSubmissions])
+
+  const typeFilterButtons = [
+    { key: 'all', label: 'All', count: typeCounts.all },
+    { key: 'attendance', label: 'Attendance', count: typeCounts.attendance },
+    {
+      key: 'accomplishments',
+      label: 'Accomplishments',
+      count: typeCounts.accomplishments,
+    },
+    { key: 'tasks', label: 'Tasks', count: typeCounts.tasks },
+  ]
+
   return (
     <div className="max-w-6xl space-y-6">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -322,32 +372,44 @@ export function CoordinatorMonitoringPage() {
                 <dt className="text-xs font-medium text-ink-muted">
                   Total interns
                 </dt>
-                <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">
+                <dd className="mt-1 text-xl font-semibold tabular-nums text-ink">
                   {totals.totalInterns}
+                </dd>
+                <dd className="mt-0.5 text-xs text-ink-muted">
+                  Registered in program
                 </dd>
               </div>
               <div className="px-5 py-4">
                 <dt className="text-xs font-medium text-ink-muted">
                   Pending approvals
                 </dt>
-                <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">
+                <dd className="mt-1 text-xl font-semibold tabular-nums text-ink">
                   {totals.totalPendingApprovals}
+                </dd>
+                <dd className="mt-0.5 text-xs text-ink-muted">
+                  Awaiting supervisor review
                 </dd>
               </div>
               <div className="px-5 py-4 max-lg:border-e max-lg:border-rule">
                 <dt className="text-xs font-medium text-ink-muted">
                   Interns needing attention
                 </dt>
-                <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">
+                <dd className="mt-1 text-xl font-semibold tabular-nums text-ink">
                   {totals.internsNeedingAttention}
+                </dd>
+                <dd className="mt-0.5 text-xs text-ink-muted">
+                  Flagged for follow-up
                 </dd>
               </div>
               <div className="px-5 py-4">
                 <dt className="text-xs font-medium text-ink-muted">
                   Total approved hours
                 </dt>
-                <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">
+                <dd className="mt-1 text-xl font-semibold tabular-nums text-ink">
                   {formatDecimalHours(totals.totalApprovedMinutes)}
+                </dd>
+                <dd className="mt-0.5 text-xs text-ink-muted">
+                  Break-adjusted across interns
                 </dd>
               </div>
             </dl>
@@ -384,16 +446,16 @@ export function CoordinatorMonitoringPage() {
                 aria-labelledby="needs-attention-heading"
                 className="table-wrapper"
               >
-                <table className="submission-table">
+                <table className="submission-table is-compact">
                   <caption className="visually-hidden">
                     Interns requiring coordinator follow-up
                   </caption>
                   <thead>
                     <tr>
-                      <th scope="col" className="w-56">
+                      <th scope="col" className="w-52">
                         Intern
                       </th>
-                      <th scope="col" className="w-48">
+                      <th scope="col" className="w-44">
                         Supervisor
                       </th>
                       <th scope="col">Attention flags</th>
@@ -404,13 +466,13 @@ export function CoordinatorMonitoringPage() {
                       <tr key={intern.id}>
                         <td
                           data-label="Intern"
-                          className="font-medium text-ink"
+                          className="whitespace-nowrap text-sm font-medium text-ink"
                         >
                           {intern.full_name}
                         </td>
                         <td
                           data-label="Supervisor"
-                          className="text-sm text-ink-muted"
+                          className="whitespace-nowrap text-sm text-ink-muted"
                         >
                           {intern.supervisorName}
                         </td>
@@ -419,7 +481,7 @@ export function CoordinatorMonitoringPage() {
                             {intern.attentionFlags.map((flag) => (
                               <li
                                 key={flag}
-                                className="inline-flex items-center rounded-[5px] border border-rule bg-surface-subtle px-2.5 py-0.5 text-xs text-ink"
+                                className={`inline-flex items-center rounded-[5px] border px-2.5 py-0.5 text-xs font-medium ${getAttentionFlagClass(flag)}`}
                               >
                                 {flag}
                               </li>
@@ -465,26 +527,26 @@ export function CoordinatorMonitoringPage() {
                 aria-labelledby="intern-progress-heading"
                 className="table-wrapper"
               >
-                <table className="submission-table">
+                <table className="submission-table is-compact">
                   <caption className="visually-hidden">
                     All interns ordered by name with approved hours and progress
                   </caption>
                   <thead>
                     <tr>
                       <th scope="col">Intern</th>
-                      <th scope="col" className="w-44">
+                      <th scope="col" className="w-40">
                         Supervisor
                       </th>
-                      <th scope="col" className="w-36">
+                      <th scope="col" className="col-num w-32">
                         Approved hrs
                       </th>
-                      <th scope="col" className="w-32">
+                      <th scope="col" className="col-num w-28">
                         Required hrs
                       </th>
                       <th scope="col" className="w-48">
                         Progress
                       </th>
-                      <th scope="col" className="w-28">
+                      <th scope="col" className="col-num w-24">
                         Pending
                       </th>
                     </tr>
@@ -499,7 +561,7 @@ export function CoordinatorMonitoringPage() {
                         <tr key={intern.id}>
                           <td data-label="Intern">
                             <div className="min-w-0">
-                              <p className="font-medium text-ink">
+                              <p className="text-sm font-medium text-ink">
                                 {intern.full_name}
                               </p>
                               {academicMeta ? (
@@ -511,26 +573,24 @@ export function CoordinatorMonitoringPage() {
                           </td>
                           <td
                             data-label="Supervisor"
-                            className="text-sm text-ink-muted"
+                            className="whitespace-nowrap text-sm text-ink-muted"
                           >
                             {intern.supervisorName}
                           </td>
                           <td
                             data-label="Approved hrs"
-                            className="whitespace-nowrap"
+                            className="col-num whitespace-nowrap"
                           >
-                            <div className="flex flex-col">
-                              <span className="text-sm font-medium tabular-nums text-ink">
-                                {formatDecimalHours(intern.approvedMinutes)}
-                              </span>
-                              <span className="mt-0.5 text-xs tabular-nums text-ink-muted">
-                                {formatDurationMinutes(intern.approvedMinutes)}
-                              </span>
-                            </div>
+                            <span className="block text-sm font-medium tabular-nums text-ink">
+                              {formatDecimalHours(intern.approvedMinutes)}
+                            </span>
+                            <span className="mt-0.5 block text-xs tabular-nums text-ink-muted">
+                              {formatDurationMinutes(intern.approvedMinutes)}
+                            </span>
                           </td>
                           <td
                             data-label="Required hrs"
-                            className="whitespace-nowrap text-sm tabular-nums text-ink-muted"
+                            className="col-num whitespace-nowrap text-sm tabular-nums text-ink-muted"
                           >
                             {intern.requiredHours} hrs
                           </td>
@@ -551,7 +611,11 @@ export function CoordinatorMonitoringPage() {
                           </td>
                           <td
                             data-label="Pending"
-                            className="whitespace-nowrap text-sm tabular-nums text-ink"
+                            className={`col-num whitespace-nowrap text-sm tabular-nums ${
+                              intern.pendingCount > 0
+                                ? 'font-semibold text-accent'
+                                : 'text-ink-muted/70'
+                            }`}
                           >
                             {intern.pendingCount}
                           </td>
@@ -579,7 +643,7 @@ export function CoordinatorMonitoringPage() {
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <span className="text-xs tabular-nums text-ink-muted">
                   Showing {filteredSubmissions.length} of{' '}
                   {allSubmissions.length}
@@ -587,7 +651,7 @@ export function CoordinatorMonitoringPage() {
                 <button
                   type="button"
                   onClick={handleExportSubmissions}
-                  className="inline-flex min-h-9 items-center justify-center rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
+                  className="inline-flex min-h-9 items-center justify-center rounded-[5px] border border-rule bg-surface px-3.5 text-xs font-medium text-ink hover:bg-surface-subtle"
                 >
                   Export submissions
                 </button>
@@ -596,73 +660,91 @@ export function CoordinatorMonitoringPage() {
 
             <search
               aria-label="Filter submissions"
-              className="grid grid-cols-1 gap-3 border-b border-rule bg-surface px-5 py-3.5 sm:grid-cols-3 lg:grid-cols-[1fr_1fr_1fr_auto]"
+              className="flex flex-col gap-3 border-b border-rule bg-surface px-5 py-3.5 lg:flex-row lg:items-center lg:justify-between"
             >
-              <div className="flex flex-col gap-1">
-                <label
-                  htmlFor="monitoring-filter-type"
-                  className="text-xs font-medium text-ink-muted"
-                >
-                  Type
-                </label>
-                <select
-                  id="monitoring-filter-type"
-                  value={typeFilter}
-                  onChange={(event) => setTypeFilter(event.target.value)}
-                  className="form-control min-h-9 w-full rounded-[5px] border border-input-border bg-surface px-3 py-1.5 text-sm text-ink"
-                >
-                  <option value="all">All</option>
-                  <option value="attendance">Attendance</option>
-                  <option value="accomplishments">Accomplishments</option>
-                  <option value="tasks">Tasks</option>
-                </select>
+              <div
+                role="group"
+                aria-label="Filter by submission type"
+                className="flex flex-wrap items-center gap-1.5"
+              >
+                {typeFilterButtons.map((btn) => {
+                  const active = typeFilter === btn.key
+                  return (
+                    <button
+                      key={btn.key}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setTypeFilter(btn.key)}
+                      className={`inline-flex min-h-9 items-center gap-1.5 rounded-[5px] border px-3 text-xs font-medium transition-colors ${
+                        active
+                          ? 'border-accent/45 bg-accent-tint text-accent'
+                          : 'border-rule bg-surface text-ink-muted hover:bg-surface-subtle hover:text-ink'
+                      }`}
+                    >
+                      <span>{btn.label}</span>
+                      <span className="tabular-nums opacity-75">
+                        ({btn.count})
+                      </span>
+                    </button>
+                  )
+                })}
               </div>
 
-              <div className="flex flex-col gap-1">
-                <label
-                  htmlFor="monitoring-filter-status"
-                  className="text-xs font-medium text-ink-muted"
-                >
-                  Status
-                </label>
-                <select
-                  id="monitoring-filter-status"
-                  value={statusFilter}
-                  onChange={(event) => setStatusFilter(event.target.value)}
-                  className="form-control min-h-9 w-full rounded-[5px] border border-input-border bg-surface px-3 py-1.5 text-sm text-ink"
-                >
-                  <option value="all">All</option>
-                  <option value="pending">Pending</option>
-                  <option value="approved">Approved</option>
-                  <option value="returned">Returned</option>
-                  <option value="rejected">Rejected</option>
-                </select>
-              </div>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="flex items-center gap-2">
+                  <label
+                    htmlFor="monitoring-filter-status"
+                    className="text-xs font-medium text-ink-muted"
+                  >
+                    Status
+                  </label>
+                  <div className="relative flex items-center">
+                    <select
+                      id="monitoring-filter-status"
+                      value={statusFilter}
+                      onChange={(event) => setStatusFilter(event.target.value)}
+                      className="form-control min-h-9 min-w-[8.75rem] appearance-none rounded-[5px] border border-rule bg-surface py-1.5 ps-3 pe-8 text-xs font-medium text-ink transition-colors hover:border-input-border"
+                    >
+                      <option value="all">All statuses</option>
+                      <option value="pending">Pending</option>
+                      <option value="approved">Approved</option>
+                      <option value="returned">Returned</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                    <span className="pointer-events-none absolute inset-e-2.5 flex items-center">
+                      <SelectChevronIcon />
+                    </span>
+                  </div>
+                </div>
 
-              <div className="flex flex-col gap-1">
-                <label
-                  htmlFor="monitoring-filter-intern"
-                  className="text-xs font-medium text-ink-muted"
-                >
-                  Intern
-                </label>
-                <select
-                  id="monitoring-filter-intern"
-                  value={internFilter}
-                  onChange={(event) => setInternFilter(event.target.value)}
-                  className="form-control min-h-9 w-full rounded-[5px] border border-input-border bg-surface px-3 py-1.5 text-sm text-ink"
-                >
-                  <option value="all">All interns</option>
-                  {interns.map((intern) => (
-                    <option key={intern.id} value={intern.id}>
-                      {intern.full_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                <div className="flex items-center gap-2">
+                  <label
+                    htmlFor="monitoring-filter-intern"
+                    className="text-xs font-medium text-ink-muted"
+                  >
+                    Intern
+                  </label>
+                  <div className="relative flex items-center">
+                    <select
+                      id="monitoring-filter-intern"
+                      value={internFilter}
+                      onChange={(event) => setInternFilter(event.target.value)}
+                      className="form-control min-h-9 min-w-[10.5rem] appearance-none rounded-[5px] border border-rule bg-surface py-1.5 ps-3 pe-8 text-xs font-medium text-ink transition-colors hover:border-input-border"
+                    >
+                      <option value="all">All interns</option>
+                      {interns.map((intern) => (
+                        <option key={intern.id} value={intern.id}>
+                          {intern.full_name}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="pointer-events-none absolute inset-e-2.5 flex items-center">
+                      <SelectChevronIcon />
+                    </span>
+                  </div>
+                </div>
 
-              {hasActiveFilters ? (
-                <div className="flex items-end">
+                {hasActiveFilters ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -672,10 +754,10 @@ export function CoordinatorMonitoringPage() {
                     }}
                     className="inline-flex min-h-9 items-center justify-center rounded-[5px] border border-rule bg-surface-subtle px-3 text-xs font-medium text-ink hover:bg-surface"
                   >
-                    Clear filters
+                    Clear
                   </button>
-                </div>
-              ) : null}
+                ) : null}
+              </div>
             </search>
 
             {filteredSubmissions.length === 0 ? (
@@ -691,30 +773,35 @@ export function CoordinatorMonitoringPage() {
                 aria-labelledby="all-submissions-heading"
                 className="table-wrapper"
               >
-                <table className="submission-table">
+                <table className="submission-table is-compact">
                   <caption className="visually-hidden">
                     Filtered submissions across attendance, accomplishments, and
                     tasks
                   </caption>
                   <thead>
                     <tr>
-                      <th scope="col" className="w-40">
+                      <th scope="col" className="whitespace-nowrap">
                         Intern
                       </th>
-                      <th scope="col" className="w-32">
+                      <th scope="col" className="whitespace-nowrap">
                         Type
                       </th>
-                      <th scope="col">Title / summary</th>
-                      <th scope="col" className="w-36">
+                      <th scope="col" className="w-full min-w-[16rem]">
+                        Title / summary
+                      </th>
+                      <th scope="col" className="whitespace-nowrap">
                         Status
                       </th>
-                      <th scope="col" className="w-36">
+                      <th scope="col" className="whitespace-nowrap">
                         Submitted / date
                       </th>
-                      <th scope="col" className="w-40">
+                      <th scope="col" className="whitespace-nowrap">
                         Supervisor
                       </th>
-                      <th scope="col" className="col-action w-24">
+                      <th
+                        scope="col"
+                        className="col-action whitespace-nowrap"
+                      >
                         Details
                       </th>
                     </tr>
@@ -729,7 +816,7 @@ export function CoordinatorMonitoringPage() {
                             if (event.target.closest('button, a')) return
                             setSelectedItem(item)
                           }}
-                          className="cursor-pointer transition-colors hover:bg-surface-subtle/70"
+                          className="cursor-pointer"
                         >
                           <td
                             data-label="Intern"
@@ -737,58 +824,59 @@ export function CoordinatorMonitoringPage() {
                           >
                             {item.internName}
                           </td>
-                          <td
-                            data-label="Type"
-                            className="whitespace-nowrap text-xs font-medium text-ink-muted"
-                          >
-                            {item.typeLabel}
+                          <td data-label="Type" className="whitespace-nowrap">
+                            <span className="inline-flex items-center rounded-[4px] border border-rule bg-surface-subtle px-2 py-0.5 text-xs font-medium text-ink-muted">
+                              {item.typeLabel}
+                            </span>
                           </td>
                           <td data-label="Title / summary">
                             {item.kind === 'attendance' ? (
-                              <div className="min-w-0 space-y-0.5 text-sm">
-                                <p className="font-medium tabular-nums text-ink">
-                                  {formatCalendarDate(row.attendance_date)} —{' '}
-                                  {formatWallClockTime(row.time_in)} to{' '}
-                                  {formatWallClockTime(row.time_out)}
+                              <div className="min-w-0 space-y-0.5">
+                                <p className="text-sm font-medium tabular-nums text-ink">
+                                  {formatCalendarDate(row.attendance_date)}
+                                  <span className="ms-2 font-normal text-ink-muted">
+                                    {formatWallClockTime(row.time_in)} –{' '}
+                                    {formatWallClockTime(row.time_out)}
+                                  </span>
                                 </p>
                                 <p className="text-xs tabular-nums text-ink-muted">
-                                  Rendered:{' '}
+                                  Rendered{' '}
                                   {item.renderedMinutes !== null
                                     ? `${formatDurationMinutes(item.renderedMinutes)} (${formatDecimalHours(item.renderedMinutes)})`
                                     : '—'}
                                 </p>
                               </div>
                             ) : item.kind === 'accomplishments' ? (
-                              <div className="min-w-0">
-                                <p className="font-medium text-ink">
+                              <div className="min-w-0 space-y-0.5">
+                                <p className="text-sm font-medium text-ink">
                                   {row.title}
                                 </p>
-                                <p className="mt-0.5 text-xs tabular-nums text-ink-muted">
+                                <p className="text-xs tabular-nums text-ink-muted">
                                   Week of {formatWeekRange(row.week_of)}
                                 </p>
                               </div>
                             ) : (
-                              <div className="min-w-0">
+                              <div className="min-w-0 space-y-1">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <p className="font-medium text-ink">
+                                  <p className="text-sm font-medium text-ink">
                                     {row.title}
                                   </p>
                                   <PriorityBadge priority={row.priority} />
                                 </div>
                                 {!item.isSubmittedTask ? (
-                                  <p className="mt-0.5 text-xs text-ink-muted">
+                                  <p className="text-xs text-ink-muted">
                                     Assigned, not yet submitted
                                   </p>
                                 ) : null}
                               </div>
                             )}
                           </td>
-                          <td data-label="Status">
+                          <td data-label="Status" className="whitespace-nowrap">
                             <StatusBadge status={row.status} />
                           </td>
                           <td
                             data-label="Submitted / date"
-                            className="whitespace-nowrap text-sm tabular-nums text-ink-muted"
+                            className="whitespace-nowrap text-xs tabular-nums text-ink-muted"
                           >
                             {item.submittedOrDateIso ? (
                               <time dateTime={item.submittedOrDateIso}>
@@ -800,15 +888,18 @@ export function CoordinatorMonitoringPage() {
                           </td>
                           <td
                             data-label="Supervisor"
-                            className="text-sm text-ink-muted"
+                            className="whitespace-nowrap text-xs text-ink-muted"
                           >
                             {item.supervisorName}
                           </td>
-                          <td data-label="Details" className="col-action">
+                          <td
+                            data-label="Details"
+                            className="col-action whitespace-nowrap"
+                          >
                             <button
                               type="button"
                               onClick={() => setSelectedItem(item)}
-                              className="inline-flex min-h-9 items-center justify-center rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
+                              className="inline-flex min-h-8 items-center justify-center rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
                             >
                               <span>View</span>
                               <span className="visually-hidden">
@@ -852,30 +943,32 @@ export function CoordinatorMonitoringPage() {
               aria-labelledby="consolidated-report-heading"
               className="table-wrapper"
             >
-              <table className="submission-table">
+              <table className="submission-table is-compact">
                 <caption className="visually-hidden">
                   Consolidated counts of attendance, accomplishments, and tasks
                   by approval status
                 </caption>
                 <thead>
                   <tr>
-                    <th scope="col">Record type</th>
-                    <th scope="col" className="w-28">
+                    <th scope="col" className="min-w-[10rem]">
+                      Record type
+                    </th>
+                    <th scope="col" className="col-num whitespace-nowrap">
                       Pending
                     </th>
-                    <th scope="col" className="w-44">
+                    <th scope="col" className="col-num whitespace-nowrap">
                       Assigned, not yet submitted
                     </th>
-                    <th scope="col" className="w-28">
+                    <th scope="col" className="col-num whitespace-nowrap">
                       Approved
                     </th>
-                    <th scope="col" className="w-28">
+                    <th scope="col" className="col-num whitespace-nowrap">
                       Returned
                     </th>
-                    <th scope="col" className="w-28">
+                    <th scope="col" className="col-num whitespace-nowrap">
                       Rejected
                     </th>
-                    <th scope="col" className="w-28">
+                    <th scope="col" className="col-num whitespace-nowrap">
                       Total
                     </th>
                   </tr>
@@ -883,74 +976,111 @@ export function CoordinatorMonitoringPage() {
                 <tbody>
                   {reportMatrix.map((row) => (
                     <tr key={row.key}>
-                      <th
-                        scope="row"
-                        className="text-start font-medium text-ink"
-                      >
+                      <th scope="row" className="text-sm font-medium text-ink">
                         {row.label}
                       </th>
-                      <td data-label="Pending" className="tabular-nums text-ink">
+                      <td
+                        data-label="Pending"
+                        className={`col-num text-sm ${
+                          row.pending > 0
+                            ? 'font-semibold text-accent'
+                            : 'text-ink-muted/65'
+                        }`}
+                      >
                         {row.pending}
                       </td>
                       <td
                         data-label="Assigned, not yet submitted"
-                        className="tabular-nums text-ink-muted"
+                        className={`col-num text-sm ${
+                          row.key === 'tasks' && row.notSubmitted > 0
+                            ? 'font-medium text-ink'
+                            : 'text-ink-muted/65'
+                        }`}
                       >
                         {row.key === 'tasks' ? row.notSubmitted : '—'}
                       </td>
                       <td
                         data-label="Approved"
-                        className="tabular-nums text-ink"
+                        className={`col-num text-sm ${
+                          row.approved > 0
+                            ? 'font-medium text-success'
+                            : 'text-ink-muted/65'
+                        }`}
                       >
                         {row.approved}
                       </td>
                       <td
                         data-label="Returned"
-                        className="tabular-nums text-ink"
+                        className={`col-num text-sm ${
+                          row.returned > 0
+                            ? 'font-medium text-error'
+                            : 'text-ink-muted/65'
+                        }`}
                       >
                         {row.returned}
                       </td>
                       <td
                         data-label="Rejected"
-                        className="tabular-nums text-ink"
+                        className={`col-num text-sm ${
+                          row.rejected > 0
+                            ? 'font-medium text-error'
+                            : 'text-ink-muted/65'
+                        }`}
                       >
                         {row.rejected}
                       </td>
                       <td
                         data-label="Total"
-                        className="font-semibold tabular-nums text-ink"
+                        className="col-num text-sm font-semibold text-ink"
                       >
                         {row.total}
                       </td>
                     </tr>
                   ))}
-                  <tr className="bg-surface-subtle font-semibold">
-                    <th scope="row" className="text-start font-semibold text-ink">
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <th scope="row" className="text-sm font-semibold text-ink">
                       Totals
                     </th>
-                    <td data-label="Pending" className="tabular-nums text-ink">
+                    <td
+                      data-label="Pending"
+                      className="col-num text-sm font-semibold text-ink"
+                    >
                       {reportTotals.pending}
                     </td>
                     <td
                       data-label="Assigned, not yet submitted"
-                      className="tabular-nums text-ink"
+                      className="col-num text-sm font-semibold text-ink"
                     >
                       {reportTotals.notSubmitted}
                     </td>
-                    <td data-label="Approved" className="tabular-nums text-ink">
+                    <td
+                      data-label="Approved"
+                      className="col-num text-sm font-semibold text-ink"
+                    >
                       {reportTotals.approved}
                     </td>
-                    <td data-label="Returned" className="tabular-nums text-ink">
+                    <td
+                      data-label="Returned"
+                      className="col-num text-sm font-semibold text-ink"
+                    >
                       {reportTotals.returned}
                     </td>
-                    <td data-label="Rejected" className="tabular-nums text-ink">
+                    <td
+                      data-label="Rejected"
+                      className="col-num text-sm font-semibold text-ink"
+                    >
                       {reportTotals.rejected}
                     </td>
-                    <td data-label="Total" className="tabular-nums text-ink">
+                    <td
+                      data-label="Total"
+                      className="col-num text-sm font-semibold text-ink"
+                    >
                       {reportTotals.total}
                     </td>
                   </tr>
-                </tbody>
+                </tfoot>
               </table>
             </div>
           </section>
