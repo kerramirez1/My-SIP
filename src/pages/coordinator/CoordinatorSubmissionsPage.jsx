@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { AlertMessage } from '../../components/AlertMessage'
 import { CloseIcon, PaperclipIcon } from '../../components/Icons'
+import { useAuth } from '../../context/useAuth'
 import {
   formatDecimalHours,
   formatDurationMinutes,
@@ -10,6 +11,7 @@ import {
 import { triggerFileDownload } from '../../lib/coordinatorExportUtils'
 import { getCoordinatorPrefs } from '../../lib/coordinatorPrefs'
 import { getDeadlineBadge } from '../../lib/internDashboardUtils'
+import { logSubmissionDeletion } from '../../lib/submissionDeletionLog'
 import { supabase } from '../../lib/supabaseClient'
 import {
   buildSubmissionsReportCsv,
@@ -222,6 +224,7 @@ function RowViewButton({ item, onSelect }) {
 export function CoordinatorSubmissionsPage() {
   useDocumentTitle('Submissions & Reviews')
 
+  const { profile } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const initialPrefs = useMemo(() => getCoordinatorPrefs(), [])
   const todayIso = getTodayIsoDate()
@@ -536,10 +539,31 @@ export function CoordinatorSubmissionsPage() {
   }
 
   async function handleConfirmDelete(adminReason) {
-    if (!supabase || !deleteTarget || deleteTarget.status === 'approved') return
+    if (
+      !supabase ||
+      !profile ||
+      !deleteTarget ||
+      deleteTarget.status === 'approved'
+    )
+      return
 
     setDeleting(true)
     setDeleteError('')
+
+    const { error: logError } = await logSubmissionDeletion({
+      supabase,
+      coordinatorProfile: profile,
+      deleteTarget,
+      reason: adminReason,
+    })
+
+    if (logError) {
+      setDeleting(false)
+      setDeleteError(
+        `Could not remove record: the removal was not recorded (${logError.message})`,
+      )
+      return
+    }
 
     const { error } = await supabase
       .from(deleteTarget.tableName)

@@ -21,6 +21,11 @@ const TEST_ACCOUNTS = [
     password: 'Test@12345',
     full_name: 'Test Intern',
     role: 'intern',
+    required_hours: 486,
+    school_name: 'Romblon State University - Cajidiocan Campus',
+    course: 'BS Information Technology',
+    company_name: 'Test Company',
+    internship_start_date: '2026-01-05',
   },
 ]
 
@@ -173,7 +178,7 @@ async function main() {
   for (const account of seededUsers) {
     const { data: existingProfile, error: profileLookupError } = await supabase
       .from('profiles')
-      .select('id')
+      .select('id, role')
       .eq('id', account.id)
       .maybeSingle()
 
@@ -190,6 +195,15 @@ async function main() {
           id: account.id,
           full_name: account.full_name,
           role: account.role,
+          ...(account.role === 'intern'
+            ? {
+                required_hours: account.required_hours,
+                school_name: account.school_name,
+                course: account.course,
+                company_name: account.company_name,
+                internship_start_date: account.internship_start_date,
+              }
+            : {}),
         })
 
       if (insertProfileError) {
@@ -197,6 +211,23 @@ async function main() {
           `Failed to create missing profile for ${account.email}: ${insertProfileError.message}`,
         )
       }
+    } else if (existingProfile.role !== account.role) {
+      // handle_new_user() no longer trusts the signup metadata role, so a
+      // profile created by the trigger starts as 'intern'; correct it here.
+      const { error: roleUpdateError } = await supabase
+        .from('profiles')
+        .update({ role: account.role })
+        .eq('id', account.id)
+
+      if (roleUpdateError) {
+        throw new Error(
+          `Failed to correct profile role for ${account.email}: ${roleUpdateError.message}`,
+        )
+      }
+
+      console.log(
+        `Corrected profile role for ${account.email}: ${existingProfile.role} -> ${account.role}`,
+      )
     }
   }
 
@@ -209,9 +240,18 @@ async function main() {
 
   const { data: updatedInternProfile, error: updateError } = await supabase
     .from('profiles')
-    .update({ supervisor_id: supervisor.id })
+    .update({
+      supervisor_id: supervisor.id,
+      required_hours: intern.required_hours,
+      school_name: intern.school_name,
+      course: intern.course,
+      company_name: intern.company_name,
+      internship_start_date: intern.internship_start_date,
+    })
     .eq('id', intern.id)
-    .select('id, full_name, role, supervisor_id')
+    .select(
+      'id, full_name, role, supervisor_id, required_hours, school_name, course, company_name, internship_start_date',
+    )
     .single()
 
   if (updateError) {
@@ -228,6 +268,11 @@ async function main() {
   }
   console.log(
     `\nIntern supervisor link verified: ${updatedInternProfile.id} -> supervisor_id: ${updatedInternProfile.supervisor_id}`,
+  )
+  console.log(
+    `Intern scenario fields verified: required_hours: ${updatedInternProfile.required_hours}, ` +
+      `school: ${updatedInternProfile.school_name}, course: ${updatedInternProfile.course}, ` +
+      `company: ${updatedInternProfile.company_name}, start date: ${updatedInternProfile.internship_start_date}`,
   )
 }
 

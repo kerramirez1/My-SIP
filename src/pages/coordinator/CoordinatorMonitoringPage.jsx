@@ -2,7 +2,9 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { AlertMessage } from '../../components/AlertMessage'
 import { SubmissionDialog } from '../../components/SubmissionDialog'
+import { useAuth } from '../../context/useAuth'
 import { formatDecimalHours } from '../../lib/attendanceUtils'
+import { logSubmissionDeletion } from '../../lib/submissionDeletionLog'
 import { supabase } from '../../lib/supabaseClient'
 import { useCoordinatorData } from '../../lib/useCoordinatorData'
 import { useDocumentTitle } from '../../lib/useDocumentTitle'
@@ -27,6 +29,7 @@ const MAX_RECENT_SUBMISSIONS = 5
 export function CoordinatorMonitoringPage() {
   useDocumentTitle('Monitoring')
 
+  const { profile } = useAuth()
   const navigate = useNavigate()
   const todayIso = getTodayIsoDate()
 
@@ -84,10 +87,31 @@ export function CoordinatorMonitoringPage() {
   }
 
   async function handleConfirmDelete(adminReason) {
-    if (!supabase || !deleteTarget || deleteTarget.status === 'approved') return
+    if (
+      !supabase ||
+      !profile ||
+      !deleteTarget ||
+      deleteTarget.status === 'approved'
+    )
+      return
 
     setDeleting(true)
     setDeleteError('')
+
+    const { error: logError } = await logSubmissionDeletion({
+      supabase,
+      coordinatorProfile: profile,
+      deleteTarget,
+      reason: adminReason,
+    })
+
+    if (logError) {
+      setDeleting(false)
+      setDeleteError(
+        `Could not remove record: the removal was not recorded (${logError.message})`,
+      )
+      return
+    }
 
     const { error } = await supabase
       .from(deleteTarget.tableName)

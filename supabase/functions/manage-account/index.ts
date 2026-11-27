@@ -555,44 +555,47 @@ Deno.serve(async (req: Request) => {
 
       if (targetProfile.role === 'intern') {
         const supervisorId = cleanOptionalText(body.supervisor_id)
-        if (supervisorId) {
-          if (!isValidUuid(supervisorId)) {
-            return jsonResponse(
-              { error: 'Assigned supervisor ID is invalid.' },
-              400,
-            )
-          }
+        if (!supervisorId) {
+          return jsonResponse(
+            {
+              error: 'An assigned supervisor is required for intern accounts.',
+            },
+            400,
+          )
+        }
+        if (!isValidUuid(supervisorId)) {
+          return jsonResponse(
+            { error: 'Assigned supervisor ID is invalid.' },
+            400,
+          )
+        }
+        // Changing the assigned supervisor requires an existing active
+        // supervisor (same rule as create-account). Keeping the
+        // already-assigned supervisor stays allowed even if that account
+        // was later deactivated.
+        if (supervisorId !== targetProfile.supervisor_id) {
           const { data: supRow, error: supErr } = await serviceClient
             .from('profiles')
             .select('id, role, is_active')
             .eq('id', supervisorId)
             .maybeSingle()
 
-          if (supErr || !supRow || supRow.role !== 'supervisor') {
-            return jsonResponse(
-              {
-                error:
-                  'Assigned supervisor must be an existing supervisor account.',
-              },
-              400,
-            )
-          }
           if (
-            supRow.is_active === false &&
-            supervisorId !== targetProfile.supervisor_id
+            supErr ||
+            !supRow ||
+            supRow.role !== 'supervisor' ||
+            supRow.is_active === false
           ) {
             return jsonResponse(
               {
                 error:
-                  'Cannot assign an intern to a deactivated supervisor account.',
+                  'Assigned supervisor must be an existing active supervisor account.',
               },
               400,
             )
           }
-          updates.supervisor_id = supervisorId
-        } else {
-          updates.supervisor_id = null
         }
+        updates.supervisor_id = supervisorId
 
         if (
           body.required_hours !== undefined &&

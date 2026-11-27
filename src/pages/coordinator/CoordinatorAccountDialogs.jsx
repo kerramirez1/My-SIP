@@ -545,6 +545,11 @@ function EditAccountForm({ account, supervisors, onClose, onSaved }) {
         return
       }
       parsedHours = numeric
+
+      if (!supervisorId) {
+        setErrorMsg('An assigned supervisor is required for intern accounts.')
+        return
+      }
     }
 
     setSaving(true)
@@ -632,6 +637,7 @@ function EditAccountForm({ account, supervisors, onClose, onSaved }) {
               </label>
               <select
                 id="edit-acct-supervisor"
+                required
                 value={supervisorId}
                 onChange={(e) => setSupervisorId(e.target.value)}
                 className="form-control min-h-11 w-full rounded-[5px] border border-input-border bg-surface px-3.5 py-2.5 text-sm text-ink hover:border-ink"

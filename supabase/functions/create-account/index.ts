@@ -263,8 +263,12 @@ Deno.serve(async (req: Request) => {
   }
 
   // 5. Complete public.profiles for the new user
+  // The role is set here explicitly: handle_new_user() no longer trusts the
+  // signup metadata role (schema-revision-8.sql), so this service-role
+  // update is what gives supervisor accounts their role.
   const profileUpdate: Record<string, unknown> = {
     full_name: fullName,
+    role,
   }
 
   if (role === 'intern') {
