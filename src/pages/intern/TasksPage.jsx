@@ -6,6 +6,7 @@ import { ReturnedRemarks } from '../../components/ReturnedRemarks'
 import { StatusBadge } from '../../components/StatusBadge'
 import { SubmissionDialog } from '../../components/SubmissionDialog'
 import { useAuth } from '../../context/useAuth'
+import { getDeadlineBadge } from '../../lib/internDashboardUtils'
 import {
   buildAttachmentFileName,
   getAttachmentDisplayName,
@@ -17,12 +18,19 @@ import {
 import { supabase } from '../../lib/supabaseClient'
 import { useDocumentTitle } from '../../lib/useDocumentTitle'
 import { useFormValidationSync } from '../../lib/useFormValidationSync'
-import { formatCalendarDate } from '../../lib/weekUtils'
+import { formatCalendarDate, getTodayIsoDate } from '../../lib/weekUtils'
 
 const EMPTY_LIST_STATE = {
   loadedKey: '',
   items: [],
+  assignerNames: {},
   error: '',
+}
+
+const DEADLINE_TONE_CLASSES = {
+  overdue: 'text-error font-medium',
+  today: 'text-accent font-medium',
+  upcoming: 'text-ink-muted',
 }
 
 const PRIORITY_META = {
@@ -71,6 +79,18 @@ function clearFormValidationClasses(form) {
   }
 }
 
+function getAssignerName(assignedBy, assignerNames) {
+  if (assignedBy && assignerNames[assignedBy]) {
+    return assignerNames[assignedBy]
+  }
+  return 'Your supervisor'
+}
+
+function extractIsoDatePart(timestamp) {
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(String(timestamp ?? '').trim())
+  return match ? match[1] : ''
+}
+
 export function TasksPage() {
   useDocumentTitle('Tasks')
 
@@ -114,11 +134,35 @@ export function TasksPage() {
       .eq('intern_id', internId)
       .order('deadline', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: false })
-      .then(({ data, error }) => {
+      .then(async ({ data, error }) => {
+        if (!active) return
+        const rows = error ? [] : (data ?? [])
+        const assignerIds = [
+          ...new Set(rows.map((row) => row.assigned_by).filter(Boolean)),
+        ]
+        let assignerNames = {}
+
+        if (!error && assignerIds.length > 0) {
+          const { data: profilesData } = await supabase
+            .from('profiles')
+            .select('id, full_name')
+            .in('id', assignerIds)
+
+          if (!active) return
+          if (Array.isArray(profilesData)) {
+            assignerNames = Object.fromEntries(
+              profilesData
+                .filter((p) => p?.id && p?.full_name?.trim())
+                .map((p) => [p.id, p.full_name.trim()]),
+            )
+          }
+        }
+
         if (!active) return
         setListState({
           loadedKey: currentQueryKey,
-          items: error ? [] : (data ?? []),
+          items: rows,
+          assignerNames,
           error: error ? error.message : '',
         })
       })
@@ -132,9 +176,12 @@ export function TasksPage() {
     supabase && currentQueryKey && listState.loadedKey !== currentQueryKey,
   )
   const items = listState.loadedKey === currentQueryKey ? listState.items : []
+  const assignerNames =
+    listState.loadedKey === currentQueryKey ? listState.assignerNames : {}
   const listError =
     attachmentError ||
     (listState.loadedKey === currentQueryKey ? listState.error : '')
+  const todayIso = getTodayIsoDate()
 
   const statusCounts = items.reduce(
     (counts, row) => {
@@ -383,6 +430,18 @@ export function TasksPage() {
                 {items.map((row) => {
                   const editable = isEditableSubmissionStatus(row.status)
                   const effectiveDeadline = row.deadline || row.task_date
+                  const assignerName = getAssignerName(
+                    row.assigned_by,
+                    assignerNames,
+                  )
+                  const showDeadlineUrgency =
+                    !row.submitted_at &&
+                    row.status !== 'approved' &&
+                    Boolean(effectiveDeadline)
+                  const deadlineBadge = showDeadlineUrgency
+                    ? getDeadlineBadge(effectiveDeadline, todayIso)
+                    : null
+                  const submittedDateIso = extractIsoDatePart(row.submitted_at)
                   const signedUrl = signedUrlsById[row.id]
                   const actionLabel = hasReviewerFeedbackStatus(row.status)
                     ? 'Resubmit'
@@ -400,13 +459,27 @@ export function TasksPage() {
                               {row.description}
                             </p>
                           ) : null}
+                          <p className="mt-1 text-xs text-ink-muted">
+                            Assigned by {assignerName}
+                          </p>
 
                           {row.completion_description ||
-                          row.submission_attachment_url ? (
+                          row.submission_attachment_url ||
+                          row.submitted_at ? (
                             <div className="mt-2.5 rounded-[5px] border border-rule bg-surface-subtle px-3 py-2 text-xs">
-                              <p className="font-semibold text-ink">
-                                Your submission
-                              </p>
+                              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                                <p className="font-semibold text-ink">
+                                  Your submission
+                                </p>
+                                {submittedDateIso ? (
+                                  <p className="tabular-nums text-ink-muted">
+                                    Submitted on{' '}
+                                    <time dateTime={submittedDateIso}>
+                                      {formatCalendarDate(submittedDateIso)}
+                                    </time>
+                                  </p>
+                                ) : null}
+                              </div>
                               {row.completion_description ? (
                                 <p className="mt-1 whitespace-pre-line text-ink-muted break-words">
                                   {row.completion_description}
@@ -455,12 +528,21 @@ export function TasksPage() {
                       </td>
 
                       <td data-label="Deadline" className="whitespace-nowrap">
-                        <time
-                          dateTime={effectiveDeadline}
-                          className="text-sm font-medium tabular-nums text-ink"
-                        >
-                          {formatCalendarDate(effectiveDeadline)}
-                        </time>
+                        <div className="flex flex-col">
+                          <time
+                            dateTime={effectiveDeadline}
+                            className="text-sm font-medium tabular-nums text-ink"
+                          >
+                            {formatCalendarDate(effectiveDeadline)}
+                          </time>
+                          {deadlineBadge ? (
+                            <span
+                              className={`mt-0.5 text-xs tabular-nums ${DEADLINE_TONE_CLASSES[deadlineBadge.tone]}`}
+                            >
+                              {deadlineBadge.label}
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
 
                       <td data-label="Priority" className="whitespace-nowrap">
@@ -532,14 +614,23 @@ export function TasksPage() {
                 {activeTask.description}
               </p>
             ) : null}
-            <p className="mt-2 tabular-nums text-ink-muted">
-              Deadline:{' '}
-              <span className="font-medium text-ink">
-                {formatCalendarDate(
-                  activeTask.deadline || activeTask.task_date,
-                )}
-              </span>
-            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-ink-muted">
+              <p className="tabular-nums">
+                Deadline:{' '}
+                <span className="font-medium text-ink">
+                  {formatCalendarDate(
+                    activeTask.deadline || activeTask.task_date,
+                  )}
+                </span>
+              </p>
+              <span aria-hidden="true" className="h-3 w-px bg-rule" />
+              <p>
+                Assigned by{' '}
+                <span className="font-medium text-ink">
+                  {getAssignerName(activeTask.assigned_by, assignerNames)}
+                </span>
+              </p>
+            </div>
           </div>
         ) : null}
 
