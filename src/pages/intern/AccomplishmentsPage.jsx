@@ -472,6 +472,13 @@ export function AccomplishmentsPage() {
   const isWeekReflectionLocked =
     items.length > 0 && (weeklyStatus.isApproved || hasSubmittedPendingLock)
   const canSubmitWeeklyReport = weeklyStatus.draftCount > 0
+
+  // Count how many distinct Mon-Sat dates in the week already have entries.
+  const usedDatesInWeek = useMemo(
+    () => new Set(items.map((row) => row.entry_date).filter(Boolean)),
+    [items],
+  )
+  const allWeekdaysLogged = usedDatesInWeek.size >= 6
   const canAddDailyEntry = !allWeekdaysLogged && !weeklyStatus.isApproved
 
   const activeSkills =
@@ -502,13 +509,6 @@ export function AccomplishmentsPage() {
       activeLessons !== resolvedReflection.lessons_learned)
 
   const hasWeeklyDocumentData = items.length > 0 || hasSavedReflectionContent
-
-  // Count how many distinct Mon-Sat dates in the week already have entries.
-  const usedDatesInWeek = useMemo(
-    () => new Set(items.map((row) => row.entry_date).filter(Boolean)),
-    [items],
-  )
-  const allWeekdaysLogged = usedDatesInWeek.size >= 6
 
   function updateReflectionField(field, value) {
     setReflectionError('')
