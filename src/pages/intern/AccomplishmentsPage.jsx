@@ -572,20 +572,20 @@ export function AccomplishmentsPage() {
             aria-labelledby="accomplishments-list-heading"
             className="table-wrapper"
           >
-            <table className="submission-table">
+            <table className="submission-table is-compact">
               <caption className="visually-hidden">
                 Accomplishments for the week of {formatWeekRange(selectedWeekOf)}
               </caption>
               <thead>
                 <tr>
                   <th scope="col">Accomplishment</th>
-                  <th scope="col" className="w-56">
+                  <th scope="col" className="w-56 whitespace-nowrap">
                     Attachment
                   </th>
-                  <th scope="col" className="w-36">
+                  <th scope="col" className="w-36 whitespace-nowrap">
                     Status
                   </th>
-                  <th scope="col" className="col-action w-36">
+                  <th scope="col" className="col-action w-56 whitespace-nowrap">
                     Action
                   </th>
                 </tr>
@@ -597,50 +597,14 @@ export function AccomplishmentsPage() {
 
                   return (
                     <tr key={row.id}>
-                      <td data-label="Accomplishment">
+                      <td
+                        data-label="Accomplishment"
+                        className="align-middle!"
+                      >
                         <div className="min-w-0">
-                          <p className="font-medium text-ink">{row.title}</p>
-                          {row.description ? (
-                            <p className="mt-1 max-w-[60ch] whitespace-pre-line text-sm text-ink-muted break-words">
-                              {row.description}
-                            </p>
-                          ) : null}
-                          {row.skills_acquired ||
-                          row.challenges_encountered ||
-                          row.lessons_learned ? (
-                            <dl className="mt-2.5 space-y-2 border-t border-rule/70 pt-2.5">
-                              {row.skills_acquired ? (
-                                <div>
-                                  <dt className="text-xs font-medium text-ink-muted">
-                                    Skills acquired
-                                  </dt>
-                                  <dd className="mt-0.5 max-w-[60ch] whitespace-pre-line text-sm text-ink break-words">
-                                    {row.skills_acquired}
-                                  </dd>
-                                </div>
-                              ) : null}
-                              {row.challenges_encountered ? (
-                                <div>
-                                  <dt className="text-xs font-medium text-ink-muted">
-                                    Challenges encountered
-                                  </dt>
-                                  <dd className="mt-0.5 max-w-[60ch] whitespace-pre-line text-sm text-ink break-words">
-                                    {row.challenges_encountered}
-                                  </dd>
-                                </div>
-                              ) : null}
-                              {row.lessons_learned ? (
-                                <div>
-                                  <dt className="text-xs font-medium text-ink-muted">
-                                    Lessons learned
-                                  </dt>
-                                  <dd className="mt-0.5 max-w-[60ch] whitespace-pre-line text-sm text-ink break-words">
-                                    {row.lessons_learned}
-                                  </dd>
-                                </div>
-                              ) : null}
-                            </dl>
-                          ) : null}
+                          <p className="text-sm font-medium text-ink break-words">
+                            {row.title}
+                          </p>
                           {hasReviewerFeedbackStatus(row.status) ? (
                             <ReturnedRemarks
                               remarks={row.reviewer_remarks}
@@ -650,7 +614,7 @@ export function AccomplishmentsPage() {
                         </div>
                       </td>
 
-                      <td data-label="Attachment">
+                      <td data-label="Attachment" className="align-middle!">
                         {row.attachment_url ? (
                           <div className="flex min-w-0 flex-col items-start gap-1">
                             <button
@@ -683,17 +647,23 @@ export function AccomplishmentsPage() {
                         )}
                       </td>
 
-                      <td data-label="Status">
+                      <td
+                        data-label="Status"
+                        className="align-middle! whitespace-nowrap"
+                      >
                         <StatusBadge status={row.status} />
                       </td>
 
-                      <td data-label="Action" className="col-action">
-                        <div className="flex flex-col items-start gap-1.5 sm:items-end">
+                      <td
+                        data-label="Action"
+                        className="col-action align-middle!"
+                      >
+                        <div className="inline-flex flex-wrap items-center gap-2">
                           {editable ? (
                             <button
                               type="button"
                               onClick={() => openEditDialog(row)}
-                              className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
+                              className="inline-flex min-h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
                             >
                               <EditIcon className="size-3.5" />
                               <span>Edit</span>
@@ -703,14 +673,14 @@ export function AccomplishmentsPage() {
                               </span>
                             </button>
                           ) : (
-                            <span className="text-xs text-ink-muted">
+                            <span className="inline-flex min-h-8 items-center text-xs text-ink-muted">
                               Locked
                             </span>
                           )}
                           <button
                             type="button"
                             onClick={() => setDocumentRow(row)}
-                            className="inline-flex min-h-8 items-center justify-center whitespace-nowrap rounded-[5px] border border-rule bg-surface px-2.5 text-xs font-medium text-ink hover:bg-surface-subtle"
+                            className="inline-flex min-h-8 items-center justify-center whitespace-nowrap rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
                           >
                             <span>View document</span>
                             <span className="visually-hidden">
