@@ -15,6 +15,7 @@ import {
   resolveHostOrganizationName,
   runWithSchemaFallback,
 } from './schemaCompat'
+import { isDraftAccomplishment } from './submissionHelpers'
 import { supabase } from './supabaseClient'
 import {
   formatCalendarDate,
@@ -41,6 +42,9 @@ const COORDINATOR_PROFILES_SELECT_LEGACY =
   'id, full_name, role, supervisor_id, student_id_no, company_name, school_name, course, required_hours, internship_start_date, is_active, created_at'
 
 const COORDINATOR_ACCOMPLISHMENTS_SELECT_LATEST =
+  'id, intern_id, week_of, entry_date, title, description, output_result, skills_acquired, challenges_encountered, lessons_learned, attachment_url, submitted_at, status, reviewed_by, reviewer_remarks, reviewed_at, created_at, updated_at'
+
+const COORDINATOR_ACCOMPLISHMENTS_SELECT_REV9 =
   'id, intern_id, week_of, entry_date, title, description, output_result, skills_acquired, challenges_encountered, lessons_learned, attachment_url, status, reviewed_by, reviewer_remarks, reviewed_at, created_at, updated_at'
 
 const COORDINATOR_ACCOMPLISHMENTS_SELECT_LEGACY =
@@ -74,6 +78,13 @@ const MONTH_SHORT = [
 ]
 
 export const DISPLAY_STATUS_META = {
+  saved_not_submitted: {
+    key: 'saved_not_submitted',
+    label: 'Saved – Not Yet Submitted',
+    shortLabel: 'Saved (Draft)',
+    className:
+      'border-dashed border-input-border bg-surface-subtle text-ink-muted',
+  },
   assigned_not_submitted: {
     key: 'assigned_not_submitted',
     label: 'Assigned – Not Submitted',
@@ -145,7 +156,9 @@ function addDaysToIso(isoDate, days) {
 function computeReviewTurnaroundHours(kind, row) {
   if (!row?.reviewed_at) return null
   const startRaw =
-    kind === 'tasks' ? row.submitted_at || row.created_at : row.created_at
+    kind === 'tasks' || kind === 'accomplishments'
+      ? row.submitted_at || row.created_at
+      : row.created_at
   if (!startRaw) return null
   const startMs = Date.parse(startRaw)
   const endMs = Date.parse(row.reviewed_at)
@@ -310,6 +323,9 @@ function getDisplayStatusKey(kind, row) {
   if (kind === 'tasks' && row.status === 'pending' && !row.submitted_at) {
     return 'assigned_not_submitted'
   }
+  if (kind === 'accomplishments' && isDraftAccomplishment(row)) {
+    return 'saved_not_submitted'
+  }
   return row.status || 'pending'
 }
 
@@ -337,6 +353,27 @@ function buildSubmissionHistory(kind, row, internName, assignerName, reviewerNam
         label: `Completion submitted by ${internName}`,
         timestamp: row.submitted_at,
         dateLabel: subIso ? formatCalendarDate(subIso) : '—',
+      })
+    }
+  } else if (kind === 'accomplishments') {
+    if (isDraftAccomplishment(row)) {
+      events.push({
+        id: 'saved-draft',
+        label: `Daily activity saved by ${internName} (not yet submitted)`,
+        timestamp: row.created_at || row.entry_date || row.week_of || '',
+        dateLabel: createdIso
+          ? formatCalendarDate(createdIso)
+          : formatCalendarDate(row.entry_date || row.week_of),
+      })
+    } else {
+      const submittedIso = extractIsoDatePart(row.submitted_at || row.created_at)
+      events.push({
+        id: 'created',
+        label: `Weekly accomplishment submitted by ${internName}`,
+        timestamp: row.submitted_at || row.created_at || row.week_of || '',
+        dateLabel: submittedIso
+          ? formatCalendarDate(submittedIso)
+          : formatCalendarDate(row.entry_date || row.week_of),
       })
     }
   } else {
@@ -675,10 +712,21 @@ export function buildCoordinatorMonitoringData({
 
   const accomplishmentItems = scopedAccomplishments.map((row) => {
     const internProfile = profileById.get(row.intern_id)
+    const isDraft = isDraftAccomplishment(row)
     const displayStatusKey = getDisplayStatusKey('accomplishments', row)
     const internName = resolveName(row.intern_id)
     const reviewerName = resolveName(row.reviewed_by)
-    const subDateIso = extractIsoDatePart(row.created_at) || row.week_of || ''
+    const subDateIso = isDraft
+      ? ''
+      : extractIsoDatePart(row.submitted_at || row.created_at) ||
+        row.week_of ||
+        ''
+    const effectiveDateIso =
+      subDateIso ||
+      row.entry_date ||
+      extractIsoDatePart(row.created_at) ||
+      row.week_of ||
+      ''
     const weekKey = `${row.intern_id}:${row.week_of}`
     const weekRows = allAccomplishmentsByInternWeek.get(weekKey) ?? [row]
     const weeklyReflection = reflectionsByInternWeek.get(weekKey) ?? null
@@ -712,9 +760,12 @@ export function buildCoordinatorMonitoringData({
       assignerName: '',
       renderedMinutes: null,
       isIncompleteAttendance: false,
+      isDraftAccomplishment: isDraft,
       titleSummary: entryTitleLabel,
       subtitleSummary: row.week_of
-        ? `Week of ${formatWeekRange(row.week_of, 5)}`
+        ? isDraft
+          ? `Week of ${formatWeekRange(row.week_of, 5)} · Saved – Not Yet Submitted`
+          : `Week of ${formatWeekRange(row.week_of, 5)}`
         : '',
       shortTitle: entryTitleLabel,
       csvTitleOrDate: row.entry_date
@@ -725,10 +776,11 @@ export function buildCoordinatorMonitoringData({
       displayStatusKey,
       displayStatusLabel:
         DISPLAY_STATUS_META[displayStatusKey]?.label || row.status,
-      isSubmittedTask: true,
+      isSubmittedTask: !isDraft,
       submissionDateIso: subDateIso,
-      submittedOrDateIso: subDateIso,
+      submittedOrDateIso: effectiveDateIso,
       sortAt:
+        row.submitted_at ||
         row.updated_at ||
         row.created_at ||
         row.entry_date ||
@@ -821,6 +873,8 @@ export function buildCoordinatorMonitoringData({
   const incompleteAttendanceByIntern = new Map()
   const hasAttendanceThisWeekByIntern = new Set()
   const hasAccomplishmentThisWeekByIntern = new Set()
+  const currentWeekAccomplishmentsByIntern = new Map()
+  const savedDraftAccomplishmentsByIntern = new Map()
   const lastSubmissionDateByIntern = new Map()
   const submissionsByIntern = new Map()
 
@@ -872,8 +926,11 @@ export function buildCoordinatorMonitoringData({
         hasAttendanceThisWeekByIntern.add(item.internId)
       }
     } else if (item.kind === 'accomplishments') {
-      trackLastDate(item.internId, item.submissionDateIso)
-      if (item.status === 'pending') {
+      trackLastDate(item.internId, item.submittedOrDateIso)
+      if (item.displayStatusKey === 'saved_not_submitted') {
+        // Saved daily draft — track separately; NEVER count as pending approval.
+        pushMap(savedDraftAccomplishmentsByIntern, item.internId, item)
+      } else if (item.displayStatusKey === 'pending') {
         bumpMap(pendingCountByIntern, item.internId)
       } else if (item.status === 'returned') {
         bumpMap(returnedCountByIntern, item.internId)
@@ -885,7 +942,10 @@ export function buildCoordinatorMonitoringData({
         item.row.week_of &&
         getMondayOfWeek(item.row.week_of) === currentWeekStart
       ) {
-        hasAccomplishmentThisWeekByIntern.add(item.internId)
+        pushMap(currentWeekAccomplishmentsByIntern, item.internId, item)
+        if (!item.isDraftAccomplishment) {
+          hasAccomplishmentThisWeekByIntern.add(item.internId)
+        }
       }
     } else if (item.kind === 'tasks') {
       if (item.submissionDateIso) {
@@ -945,6 +1005,38 @@ export function buildCoordinatorMonitoringData({
     const hasAccomplishmentThisWeek = hasAccomplishmentThisWeekByIntern.has(
       intern.id,
     )
+    const currentWeekAccItems =
+      currentWeekAccomplishmentsByIntern.get(intern.id) ?? []
+    const savedDraftAccItems =
+      savedDraftAccomplishmentsByIntern.get(intern.id) ?? []
+    const currentWeekDraftCount = currentWeekAccItems.filter(
+      (i) => i.isDraftAccomplishment,
+    ).length
+    const currentWeekSubmittedCount =
+      currentWeekAccItems.length - currentWeekDraftCount
+    const currentWeekApprovedCount = currentWeekAccItems.filter(
+      (i) => i.status === 'approved',
+    ).length
+    const currentWeekReturnedCount = currentWeekAccItems.filter(
+      (i) => i.status === 'returned' || i.status === 'rejected',
+    ).length
+
+    let currentWeekAccomplishmentState = 'not_started'
+    if (currentWeekAccItems.length > 0) {
+      if (
+        currentWeekDraftCount === 0 &&
+        currentWeekApprovedCount === currentWeekAccItems.length
+      ) {
+        currentWeekAccomplishmentState = 'approved'
+      } else if (currentWeekReturnedCount > 0) {
+        currentWeekAccomplishmentState = 'returned'
+      } else if (currentWeekDraftCount > 0) {
+        currentWeekAccomplishmentState = 'in_progress_draft'
+      } else {
+        currentWeekAccomplishmentState = 'submitted'
+      }
+    }
+
     const lastSubmissionDate = lastSubmissionDateByIntern.get(intern.id) || ''
     const supervisorName = resolveSupervisorNameForIntern(intern)
     const internSubmissions = submissionsByIntern.get(intern.id) ?? []
@@ -1177,6 +1269,13 @@ export function buildCoordinatorMonitoringData({
       overdueTasks,
       hasAttendanceThisWeek,
       hasAccomplishmentThisWeek,
+      currentWeekAccomplishmentState,
+      currentWeekDraftCount,
+      currentWeekSubmittedCount,
+      currentWeekTotalAccomplishments: currentWeekAccItems.length,
+      savedDraftCount: savedDraftAccItems.length,
+      latestSavedDraftItem: savedDraftAccItems[0] ?? null,
+      latestCurrentWeekAccomplishment: currentWeekAccItems[0] ?? null,
       lastSubmissionDate,
       isInactive,
       attentionFlags,
@@ -1277,7 +1376,7 @@ export function buildCoordinatorMonitoringData({
   )
 
   // Consolidated type-by-status matrix
-  const countByStatus = (rows, isTasks = false) => {
+  const countByStatus = (rows, kind) => {
     const counts = {
       pending: 0,
       notSubmitted: 0,
@@ -1287,7 +1386,10 @@ export function buildCoordinatorMonitoringData({
     }
     for (const row of rows) {
       if (row.status === 'pending') {
-        if (isTasks && !row.submitted_at) {
+        if (
+          (kind === 'tasks' && !row.submitted_at) ||
+          (kind === 'accomplishments' && isDraftAccomplishment(row))
+        ) {
           counts.notSubmitted += 1
         } else {
           counts.pending += 1
@@ -1311,9 +1413,12 @@ export function buildCoordinatorMonitoringData({
     }
   }
 
-  const attendanceCounts = countByStatus(scopedAttendance, false)
-  const accomplishmentCounts = countByStatus(scopedAccomplishments, false)
-  const taskCounts = countByStatus(scopedTasks, true)
+  const attendanceCounts = countByStatus(scopedAttendance, 'attendance')
+  const accomplishmentCounts = countByStatus(
+    scopedAccomplishments,
+    'accomplishments',
+  )
+  const taskCounts = countByStatus(scopedTasks, 'tasks')
 
   const reportMatrix = [
     { key: 'attendance', label: 'Attendance', ...attendanceCounts },
@@ -1330,7 +1435,7 @@ export function buildCoordinatorMonitoringData({
       attendanceCounts.pending +
       accomplishmentCounts.pending +
       taskCounts.pending,
-    notSubmitted: taskCounts.notSubmitted,
+    notSubmitted: accomplishmentCounts.notSubmitted + taskCounts.notSubmitted,
     approved:
       attendanceCounts.approved +
       accomplishmentCounts.approved +
@@ -1548,6 +1653,7 @@ export function buildCoordinatorMonitoringData({
   }
 
   for (const item of accomplishmentItems) {
+    if (item.isDraftAccomplishment) continue
     const weekMonday =
       getMondayOfWeek(item.row.week_of || item.submissionDateIso) || ''
     const bucket = ensureAccWeek(weekMonday)
@@ -1595,12 +1701,41 @@ export function buildCoordinatorMonitoringData({
 
   const accomplishmentAnalytics = {
     weeklyTrends: accomplishmentWeeklyTrends,
-    submittedTotal: accomplishmentCounts.total,
+    submittedTotal:
+      accomplishmentCounts.total - accomplishmentCounts.notSubmitted,
+    savedDraftCount: accomplishmentCounts.notSubmitted,
     pendingCount: accomplishmentCounts.pending,
     approvedCount: accomplishmentCounts.approved,
     returnedCount: accomplishmentCounts.returned,
     rejectedCount: accomplishmentCounts.rejected,
     missingThisWeekCount: missingAccomplishmentsThisWeek,
+  }
+
+  // Saved (unsubmitted) daily activity records + current-week accomplishment progress
+  const savedDailyActivityItems = accomplishmentItems.filter(
+    (item) => item.isDraftAccomplishment,
+  )
+
+  const weeklyAccomplishmentProgress = {
+    currentWeekOf: currentWeekStart,
+    currentWeekLabel: currentWeekStart
+      ? formatWeekRange(currentWeekStart, 5)
+      : '',
+    totalSavedDraftEntries: savedDailyActivityItems.length,
+    submittedOrApprovedCount: internProgressRows.filter(
+      (i) =>
+        i.currentWeekAccomplishmentState === 'submitted' ||
+        i.currentWeekAccomplishmentState === 'approved',
+    ).length,
+    inProgressDraftCount: internProgressRows.filter(
+      (i) => i.currentWeekAccomplishmentState === 'in_progress_draft',
+    ).length,
+    returnedCount: internProgressRows.filter(
+      (i) => i.currentWeekAccomplishmentState === 'returned',
+    ).length,
+    notStartedCount: internProgressRows.filter(
+      (i) => i.currentWeekAccomplishmentState === 'not_started',
+    ).length,
   }
 
   // D. Task Analytics
@@ -1676,6 +1811,8 @@ export function buildCoordinatorMonitoringData({
     attentionAlerts,
     supervisorWorkload,
     allSubmissions,
+    savedDailyActivityItems,
+    weeklyAccomplishmentProgress,
     totals,
     reportMatrix,
     reportTotals,
@@ -1730,10 +1867,18 @@ export function useCoordinatorData(filters = {}) {
             .select(COORDINATOR_ACCOMPLISHMENTS_SELECT_LATEST)
             .order('created_at', { ascending: false }),
         () =>
-          supabase
-            .from('accomplishments')
-            .select(COORDINATOR_ACCOMPLISHMENTS_SELECT_LEGACY)
-            .order('created_at', { ascending: false }),
+          runWithSchemaFallback(
+            () =>
+              supabase
+                .from('accomplishments')
+                .select(COORDINATOR_ACCOMPLISHMENTS_SELECT_REV9)
+                .order('created_at', { ascending: false }),
+            () =>
+              supabase
+                .from('accomplishments')
+                .select(COORDINATOR_ACCOMPLISHMENTS_SELECT_LEGACY)
+                .order('created_at', { ascending: false }),
+          ),
       ),
       supabase
         .from('weekly_accomplishment_reflections')
@@ -1862,6 +2007,8 @@ export function useCoordinatorData(filters = {}) {
     attentionAlerts: derived.attentionAlerts,
     supervisorWorkload: derived.supervisorWorkload,
     allSubmissions: derived.allSubmissions,
+    savedDailyActivityItems: derived.savedDailyActivityItems,
+    weeklyAccomplishmentProgress: derived.weeklyAccomplishmentProgress,
     totals: derived.totals,
     reportMatrix: derived.reportMatrix,
     reportTotals: derived.reportTotals,

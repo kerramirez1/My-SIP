@@ -3,7 +3,10 @@ import {
   formatInternshipPeriod,
   resolveHostOrganizationName,
 } from './schemaCompat'
-import { getAttachmentDisplayName } from './submissionHelpers'
+import {
+  getAttachmentDisplayName,
+  isDraftAccomplishment,
+} from './submissionHelpers'
 import {
   formatCalendarDate,
   formatWeekRange,
@@ -20,6 +23,7 @@ export const INSTITUTION_HEADER = {
 }
 
 const STATUS_DISPLAY_LABELS = {
+  saved_not_submitted: 'Saved – Not Yet Submitted',
   approved: 'Approved',
   pending: 'Pending Supervisor Review',
   returned: 'Returned for Revision',
@@ -129,16 +133,22 @@ export function resolveWeeklyReflection(weeklyReflection, weekRows = []) {
 
 /**
  * Computes the official overall review status of a Weekly Accomplishment Report.
- * A weekly report is Approved ONLY when all of its daily entries are approved.
+ * A weekly report is Approved ONLY when all of its daily entries are submitted
+ * and approved. Saved unsubmitted daily entries (`submitted_at === null`) are
+ * tracked separately in `draftCount` and are NEVER counted as `pendingCount`.
  */
 export function computeWeeklyReviewStatus(weekRows = []) {
   const totalCount = weekRows.length
   if (totalCount === 0) {
     return {
-      statusKey: 'pending',
-      statusLabel: STATUS_DISPLAY_LABELS.pending,
+      statusKey: 'saved_not_submitted',
+      statusLabel: STATUS_DISPLAY_LABELS.saved_not_submitted,
       isApproved: false,
+      isSubmitted: false,
+      hasUnsubmittedEntries: false,
       totalCount: 0,
+      draftCount: 0,
+      submittedCount: 0,
       approvedCount: 0,
       pendingCount: 0,
       returnedCount: 0,
@@ -149,6 +159,7 @@ export function computeWeeklyReviewStatus(weekRows = []) {
     }
   }
 
+  let draftCount = 0
   let approvedCount = 0
   let pendingCount = 0
   let returnedCount = 0
@@ -157,23 +168,35 @@ export function computeWeeklyReviewStatus(weekRows = []) {
   let latestSubmittedAt = ''
 
   for (const row of weekRows) {
-    const status = cleanText(row?.status).toLowerCase() || 'pending'
-    if (status === 'approved') approvedCount += 1
-    else if (status === 'returned') returnedCount += 1
-    else if (status === 'rejected') rejectedCount += 1
-    else pendingCount += 1
+    if (isDraftAccomplishment(row)) {
+      draftCount += 1
+    } else {
+      const status = cleanText(row?.status).toLowerCase() || 'pending'
+      if (status === 'approved') approvedCount += 1
+      else if (status === 'returned') returnedCount += 1
+      else if (status === 'rejected') rejectedCount += 1
+      else pendingCount += 1
 
-    const submittedTs = cleanText(row?.created_at)
-    if (submittedTs && (!latestSubmittedAt || submittedTs > latestSubmittedAt)) {
-      latestSubmittedAt = submittedTs
+      const submittedTs = cleanText(row?.submitted_at || row?.created_at)
+      if (
+        submittedTs &&
+        (!latestSubmittedAt || submittedTs > latestSubmittedAt)
+      ) {
+        latestSubmittedAt = submittedTs
+      }
     }
+
     const reviewedTs = cleanText(row?.reviewed_at)
     if (reviewedTs && (!latestReviewedAt || reviewedTs > latestReviewedAt)) {
       latestReviewedAt = reviewedTs
     }
   }
 
-  const allApproved = approvedCount === totalCount
+  const submittedCount = totalCount - draftCount
+  const allApproved =
+    totalCount > 0 && approvedCount === totalCount && draftCount === 0
+  const hasUnsubmittedEntries = draftCount > 0
+
   let statusKey = 'pending'
   if (allApproved) {
     statusKey = 'approved'
@@ -181,23 +204,31 @@ export function computeWeeklyReviewStatus(weekRows = []) {
     statusKey = 'returned'
   } else if (rejectedCount > 0) {
     statusKey = 'rejected'
+  } else if (submittedCount === 0 && draftCount > 0) {
+    statusKey = 'saved_not_submitted'
   }
 
   let progressNote = ''
-  if (!allApproved && totalCount > 1) {
+  if (!allApproved && (totalCount > 1 || draftCount > 0)) {
     const parts = []
+    if (draftCount > 0) parts.push(`${draftCount} saved (not submitted)`)
     if (approvedCount > 0) parts.push(`${approvedCount} approved`)
-    if (pendingCount > 0) parts.push(`${pendingCount} pending`)
+    if (pendingCount > 0) parts.push(`${pendingCount} pending review`)
     if (returnedCount > 0) parts.push(`${returnedCount} returned`)
     if (rejectedCount > 0) parts.push(`${rejectedCount} rejected`)
-    progressNote = `${parts.join(', ')} of ${totalCount} daily entries`
+    progressNote = `${parts.join(', ')} of ${totalCount} ${totalCount === 1 ? 'daily entry' : 'daily entries'}`
   }
 
   return {
     statusKey,
-    statusLabel: STATUS_DISPLAY_LABELS[statusKey] || STATUS_DISPLAY_LABELS.pending,
+    statusLabel:
+      STATUS_DISPLAY_LABELS[statusKey] || STATUS_DISPLAY_LABELS.pending,
     isApproved: allApproved,
+    isSubmitted: submittedCount > 0 && draftCount === 0,
+    hasUnsubmittedEntries,
     totalCount,
+    draftCount,
+    submittedCount,
     approvedCount,
     pendingCount,
     returnedCount,
@@ -205,6 +236,61 @@ export function computeWeeklyReviewStatus(weekRows = []) {
     progressNote,
     latestReviewedAt,
     latestSubmittedAt,
+  }
+}
+
+/**
+ * Computes the overall weekly display status for the intern's Accomplishments
+ * header while preserving individual entry review statuses:
+ * - Draft: no entries logged yet
+ * - Saved – Not Yet Submitted: daily entries saved, weekly report not yet submitted
+ * - Approved: all entries submitted and approved
+ * - Needs Revision: at least one entry has been returned (or rejected)
+ * - In Progress – Unsubmitted Entries: mix of submitted entries and new unsubmitted drafts
+ * - Partially Reviewed: some submitted entries are approved while others remain pending
+ * - Awaiting Review: all entries submitted and awaiting supervisor review
+ */
+export function computeWeeklyHeaderStatus(weekRows = []) {
+  const review = computeWeeklyReviewStatus(weekRows)
+
+  if (review.totalCount === 0) {
+    return { ...review, headerKey: 'draft', headerLabel: 'Draft' }
+  }
+  if (review.draftCount === review.totalCount) {
+    return {
+      ...review,
+      headerKey: 'saved_not_submitted',
+      headerLabel: 'Saved – Not Yet Submitted',
+    }
+  }
+  if (review.isApproved) {
+    return { ...review, headerKey: 'approved', headerLabel: 'Approved' }
+  }
+  if (review.returnedCount > 0 || review.rejectedCount > 0) {
+    return {
+      ...review,
+      headerKey: 'needs_revision',
+      headerLabel: 'Needs Revision',
+    }
+  }
+  if (review.hasUnsubmittedEntries) {
+    return {
+      ...review,
+      headerKey: 'in_progress',
+      headerLabel: 'Saved – Not Yet Submitted',
+    }
+  }
+  if (review.approvedCount > 0 && review.pendingCount > 0) {
+    return {
+      ...review,
+      headerKey: 'partially_reviewed',
+      headerLabel: 'Partially Reviewed',
+    }
+  }
+  return {
+    ...review,
+    headerKey: 'awaiting_review',
+    headerLabel: 'Awaiting Review',
   }
 }
 
@@ -385,9 +471,10 @@ export function getAccomplishmentDocumentFields({
 
   const reflection = resolveWeeklyReflection(weeklyReflection, sortedRows)
   const reviewSummary = computeWeeklyReviewStatus(sortedRows)
-  const submittedAtIso =
-    reviewSummary.latestSubmittedAt || cleanText(weeklyReflection?.created_at)
-  const submittedAtFormatted = formatDocumentDateTime(submittedAtIso)
+  const submittedAtIso = reviewSummary.latestSubmittedAt
+  const submittedAtFormatted = submittedAtIso
+    ? formatDocumentDateTime(submittedAtIso)
+    : ''
   const approvedAtFormatted = reviewSummary.isApproved
     ? formatDocumentDateTime(reviewSummary.latestReviewedAt)
     : ''

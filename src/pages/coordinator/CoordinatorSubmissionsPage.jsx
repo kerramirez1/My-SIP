@@ -286,8 +286,8 @@ export function CoordinatorSubmissionsPage() {
     setActiveTab(nextTabId)
     setPage(1)
     if (
-      nextTabId !== 'tasks' &&
-      statusFilter === 'assigned_not_submitted'
+      (nextTabId !== 'tasks' && statusFilter === 'assigned_not_submitted') ||
+      (nextTabId !== 'accomplishments' && statusFilter === 'saved_not_submitted')
     ) {
       setStatusFilter('all')
     }
@@ -504,12 +504,14 @@ export function CoordinatorSubmissionsPage() {
     const items = allSubmissions.filter((item) => item.kind === activeTab)
     let pending = 0
     let notSubmitted = 0
+    let savedDraft = 0
     let approved = 0
     let returned = 0
     for (const item of items) {
       if (item.displayStatusKey === 'pending') pending += 1
       else if (item.displayStatusKey === 'assigned_not_submitted')
         notSubmitted += 1
+      else if (item.displayStatusKey === 'saved_not_submitted') savedDraft += 1
       else if (item.displayStatusKey === 'approved') approved += 1
       else if (item.displayStatusKey === 'returned') returned += 1
     }
@@ -517,6 +519,7 @@ export function CoordinatorSubmissionsPage() {
       total: items.length,
       pending,
       notSubmitted,
+      savedDraft,
       approved,
       returned,
     }
@@ -620,6 +623,16 @@ export function CoordinatorSubmissionsPage() {
       count: tabStatusBreakdown.pending,
       dotClass: 'bg-accent-solid',
     },
+    ...(activeTab === 'accomplishments'
+      ? [
+          {
+            key: 'saved_not_submitted',
+            label: 'Saved (Draft)',
+            count: tabStatusBreakdown.savedDraft,
+            dotClass: 'bg-input-border',
+          },
+        ]
+      : []),
     ...(activeTab === 'tasks'
       ? [
           {
@@ -1338,7 +1351,9 @@ export function CoordinatorSubmissionsPage() {
                             >
                               {item.submissionDateIso
                                 ? formatCalendarDate(item.submissionDateIso)
-                                : '—'}
+                                : item.isDraftAccomplishment
+                                  ? 'Not submitted'
+                                  : '—'}
                             </td>
                             <td data-label="Status">
                               <CoordinatorStatusPill
@@ -1481,7 +1496,9 @@ export function CoordinatorSubmissionsPage() {
                             >
                               {item.submissionDateIso
                                 ? formatCalendarDate(item.submissionDateIso)
-                                : '—'}
+                                : item.isDraftAccomplishment
+                                  ? 'Not submitted'
+                                  : '—'}
                             </td>
                             <td data-label="Status">
                               <CoordinatorStatusPill

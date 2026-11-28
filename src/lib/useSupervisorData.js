@@ -10,6 +10,10 @@ import {
   resolveHostOrganizationName,
   runWithSchemaFallback,
 } from './schemaCompat'
+import {
+  isDraftAccomplishment,
+  isPendingReviewAccomplishment,
+} from './submissionHelpers'
 import { supabase } from './supabaseClient'
 import {
   formatCalendarDate,
@@ -40,6 +44,9 @@ const INTERNS_SELECT_LEGACY =
   'id, full_name, student_id_no, company_name, school_name, course, required_hours, internship_start_date'
 
 const ACCOMPLISHMENTS_SELECT_LATEST =
+  'id, intern_id, week_of, entry_date, title, description, output_result, skills_acquired, challenges_encountered, lessons_learned, attachment_url, submitted_at, status, reviewed_by, reviewer_remarks, reviewed_at, created_at, updated_at'
+
+const ACCOMPLISHMENTS_SELECT_REV9 =
   'id, intern_id, week_of, entry_date, title, description, output_result, skills_acquired, challenges_encountered, lessons_learned, attachment_url, status, reviewed_by, reviewer_remarks, reviewed_at, created_at, updated_at'
 
 const ACCOMPLISHMENTS_SELECT_LEGACY =
@@ -101,10 +108,18 @@ export function useSupervisorData(supervisorId) {
             .select(ACCOMPLISHMENTS_SELECT_LATEST)
             .order('created_at', { ascending: false }),
         () =>
-          supabase
-            .from('accomplishments')
-            .select(ACCOMPLISHMENTS_SELECT_LEGACY)
-            .order('created_at', { ascending: false }),
+          runWithSchemaFallback(
+            () =>
+              supabase
+                .from('accomplishments')
+                .select(ACCOMPLISHMENTS_SELECT_REV9)
+                .order('created_at', { ascending: false }),
+            () =>
+              supabase
+                .from('accomplishments')
+                .select(ACCOMPLISHMENTS_SELECT_LEGACY)
+                .order('created_at', { ascending: false }),
+          ),
       ),
       supabase
         .from('weekly_accomplishment_reflections')
@@ -274,14 +289,17 @@ export function useSupervisorData(supervisorId) {
       }
     }
 
+    // Only officially submitted accomplishments (submitted_at IS NOT NULL)
+    // enter the Pending Reviews queue and pendingCounts.
     const pendingAccomplishments = accomplishments
-      .filter((row) => row.status === 'pending')
+      .filter((row) => isPendingReviewAccomplishment(row))
       .map((row) => ({
         key: `accomplishments-${row.id}`,
         type: 'accomplishments',
         typeLabel: TYPE_LABEL_SINGULAR.accomplishments,
         ...buildAccomplishmentPlacementMeta(row),
         sortAt:
+          row.submitted_at ||
           row.updated_at ||
           row.created_at ||
           row.entry_date ||
@@ -289,6 +307,79 @@ export function useSupervisorData(supervisorId) {
           '',
         row,
       }))
+
+    // Saved daily accomplishment entries not yet officially submitted — visible
+    // immediately to the assigned supervisor in view-only monitoring, NEVER
+    // counted as pending approvals.
+    const dailyActivityUpdates = accomplishments
+      .filter((row) => isDraftAccomplishment(row))
+      .map((row) => {
+        const meta = buildAccomplishmentPlacementMeta(row)
+        return {
+          key: `daily-update-${row.id}`,
+          id: row.id,
+          internId: row.intern_id,
+          internName: meta.internName,
+          studentIdNo: meta.studentIdNo,
+          entryDate: row.entry_date || '',
+          entryDateLabel: row.entry_date
+            ? formatWeekdayCalendarDate(row.entry_date)
+            : 'Reporting week entry',
+          weekOf: row.week_of || '',
+          weekRangeLabel: row.week_of ? formatWeekRange(row.week_of, 5) : '—',
+          activityText: row.description?.trim() || row.title?.trim() || '',
+          outputText: row.output_result?.trim() || '',
+          attachmentUrl: row.attachment_url || '',
+          updatedAt: row.updated_at || row.created_at || '',
+          sortKey:
+            row.entry_date ||
+            extractIsoDatePart(row.updated_at || row.created_at) ||
+            row.week_of ||
+            '',
+          row,
+        }
+      })
+      .sort((a, b) => {
+        const dateCmp = String(b.sortKey).localeCompare(String(a.sortKey))
+        if (dateCmp !== 0) return dateCmp
+        return String(b.updatedAt).localeCompare(String(a.updatedAt))
+      })
+
+    // Officially submitted weekly reports awaiting formal supervisor review —
+    // grouped per (intern, reporting week) to drive supervisor notifications.
+    const submittedWeeklyMap = new Map()
+    for (const item of pendingAccomplishments) {
+      const weekKey = `${item.row.intern_id}:${item.row.week_of}`
+      const submittedTs = item.row.submitted_at || item.row.created_at || ''
+      const existing = submittedWeeklyMap.get(weekKey)
+      if (!existing) {
+        submittedWeeklyMap.set(weekKey, {
+          key: weekKey,
+          internId: item.row.intern_id,
+          internName: item.internName,
+          studentIdNo: item.studentIdNo,
+          weekOf: item.row.week_of,
+          weekRangeLabel: formatWeekRange(item.row.week_of, 5),
+          pendingEntriesCount: 1,
+          totalWeekEntriesCount: item.weekRows.length,
+          latestSubmittedAt: submittedTs,
+          firstPendingItem: item,
+        })
+      } else {
+        existing.pendingEntriesCount += 1
+        if (
+          submittedTs &&
+          (!existing.latestSubmittedAt ||
+            submittedTs > existing.latestSubmittedAt)
+        ) {
+          existing.latestSubmittedAt = submittedTs
+        }
+      }
+    }
+    const submittedWeeklyReports = [...submittedWeeklyMap.values()].sort(
+      (a, b) =>
+        String(b.latestSubmittedAt).localeCompare(String(a.latestSubmittedAt)),
+    )
 
     // Tasks MUST have status === 'pending' AND submitted_at IS NOT NULL
     const pendingTasks = tasks
@@ -376,6 +467,8 @@ export function useSupervisorData(supervisorId) {
         accomplishments: pendingAccomplishments.length,
         tasks: pendingTasks.length,
       },
+      dailyActivityUpdates,
+      submittedWeeklyReports,
       recentReviews,
       reviewHistory: allReviews,
     }
@@ -397,6 +490,8 @@ export function useSupervisorData(supervisorId) {
     internProgressRows: derived.internProgressRows,
     pendingItems: derived.pendingItems,
     pendingCounts: derived.pendingCounts,
+    dailyActivityUpdates: derived.dailyActivityUpdates,
+    submittedWeeklyReports: derived.submittedWeeklyReports,
     recentReviews: derived.recentReviews,
     reviewHistory: derived.reviewHistory,
     reload,

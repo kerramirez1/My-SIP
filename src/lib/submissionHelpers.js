@@ -71,6 +71,80 @@ export function hasReviewerFeedbackStatus(status) {
 }
 
 /**
+ * Returns true when an accomplishment row has been saved by the intern as a
+ * daily entry but its weekly report has not yet been officially submitted.
+ *
+ * Uses strict `=== null` so legacy/pre-migration rows where `submitted_at` is
+ * `undefined` continue to be treated as officially submitted.
+ *
+ * @param {Record<string, unknown> | null | undefined} row
+ * @returns {boolean}
+ */
+export function isDraftAccomplishment(row) {
+  return Boolean(row && row.status === 'pending' && row.submitted_at === null)
+}
+
+/**
+ * Returns true when an accomplishment row has been officially submitted for
+ * supervisor review (or already reviewed).
+ *
+ * @param {Record<string, unknown> | null | undefined} row
+ * @returns {boolean}
+ */
+export function isSubmittedAccomplishment(row) {
+  return Boolean(row) && !isDraftAccomplishment(row)
+}
+
+/**
+ * Returns true when an accomplishment row is officially submitted and awaiting
+ * formal supervisor review (never true for unsubmitted saved daily entries).
+ *
+ * @param {Record<string, unknown> | null | undefined} row
+ * @returns {boolean}
+ */
+export function isPendingReviewAccomplishment(row) {
+  return Boolean(row && row.status === 'pending' && !isDraftAccomplishment(row))
+}
+
+/**
+ * Returns true if the intern can still edit the accomplishment row:
+ * - Unsubmitted daily draft (`status === 'pending' && submitted_at === null`), OR
+ * - Returned / rejected by supervisor for revision.
+ * Once officially submitted and awaiting review (or approved), editing is locked.
+ *
+ * @param {Record<string, unknown> | null | undefined} row
+ * @returns {boolean}
+ */
+export function isEditableAccomplishment(row) {
+  if (!row) return false
+  if ('submitted_at' in row) {
+    return isDraftAccomplishment(row) || hasReviewerFeedbackStatus(row.status)
+  }
+  return isEditableSubmissionStatus(row.status)
+}
+
+/**
+ * Returns true if the intern can delete their own daily accomplishment entry.
+ * Only unsubmitted saved daily entries can be deleted by the intern.
+ *
+ * @param {Record<string, unknown> | null | undefined} row
+ * @returns {boolean}
+ */
+export function isDeletableAccomplishment(row) {
+  return isDraftAccomplishment(row)
+}
+
+/**
+ * Returns the UI status badge key for an accomplishment row.
+ * @param {Record<string, unknown> | null | undefined} row
+ * @returns {string}
+ */
+export function getAccomplishmentDisplayStatus(row) {
+  if (isDraftAccomplishment(row)) return 'saved_draft'
+  return String(row?.status || 'pending')
+}
+
+/**
  * When a returned or rejected submission is edited and saved, reset review fields back to pending.
  * @param {string | undefined | null} previousStatus
  * @returns {Record<string, unknown>}

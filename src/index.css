@@ -1045,6 +1045,187 @@ dialog.review-drawer-dialog[open]:where(:not([data-closing])) {
     justify-content: flex-end;
     inline-size: 100%;
   }
+
+  .submission-table.intern-accomplishments-table {
+    table-layout: fixed;
+    min-inline-size: 66rem;
+  }
+
+  .submission-table.intern-accomplishments-table col.intern-acc-col-date {
+    inline-size: 9.25rem;
+  }
+
+  .submission-table.intern-accomplishments-table col.intern-acc-col-activity {
+    inline-size: auto;
+  }
+
+  .submission-table.intern-accomplishments-table col.intern-acc-col-output {
+    inline-size: 20%;
+  }
+
+  .submission-table.intern-accomplishments-table col.intern-acc-col-attachment {
+    inline-size: 8.5rem;
+  }
+
+  .submission-table.intern-accomplishments-table col.intern-acc-col-status {
+    inline-size: 12.25rem;
+  }
+
+  .submission-table.intern-accomplishments-table col.intern-acc-col-action {
+    inline-size: 13.75rem;
+  }
+
+  .submission-table.intern-accomplishments-table thead th {
+    white-space: nowrap;
+    text-wrap: nowrap;
+    padding: 0.75rem 0.75rem;
+  }
+
+  .submission-table.intern-accomplishments-table tbody :is(th, td) {
+    padding: 0.875rem 0.75rem;
+    vertical-align: middle;
+  }
+
+  .submission-table.intern-accomplishments-table tbody th.intern-acc-date-cell {
+    position: static;
+    font-weight: 400;
+    white-space: nowrap;
+  }
+
+  .submission-table.intern-accomplishments-table :is(thead, tbody) tr > :first-child {
+    padding-inline-start: 1.25rem;
+  }
+
+  .submission-table.intern-accomplishments-table :is(thead, tbody) tr > :last-child {
+    padding-inline-end: 1.25rem;
+  }
+
+  .submission-table.intern-accomplishments-table .intern-acc-action-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.375rem;
+    inline-size: 100%;
+  }
+
+  .submission-table.intern-tasks-table {
+    table-layout: fixed;
+    min-inline-size: 54rem;
+  }
+
+  .submission-table.intern-tasks-table col.intern-tasks-col-main {
+    inline-size: auto;
+  }
+
+  .submission-table.intern-tasks-table col.intern-tasks-col-deadline {
+    inline-size: 9.25rem;
+  }
+
+  .submission-table.intern-tasks-table col.intern-tasks-col-priority {
+    inline-size: 6.5rem;
+  }
+
+  .submission-table.intern-tasks-table col.intern-tasks-col-status {
+    inline-size: 9.25rem;
+  }
+
+  .submission-table.intern-tasks-table col.intern-tasks-col-action {
+    inline-size: 10.25rem;
+  }
+
+  .submission-table.intern-tasks-table thead th {
+    white-space: nowrap;
+    text-wrap: nowrap;
+    padding: 0.75rem 0.875rem;
+  }
+
+  .submission-table.intern-tasks-table tbody :is(th, td) {
+    padding: 1rem 0.875rem;
+    vertical-align: middle;
+  }
+
+  .submission-table.intern-tasks-table tbody th.intern-task-primary-cell {
+    position: static;
+    font-weight: 400;
+    padding-inline-end: 1.5rem;
+  }
+
+  .submission-table.intern-tasks-table :is(thead, tbody) tr > :first-child {
+    padding-inline-start: 1.25rem;
+  }
+
+  .submission-table.intern-tasks-table :is(thead, tbody) tr > :last-child {
+    padding-inline-end: 1.25rem;
+  }
+
+  .submission-table.intern-tasks-table .intern-task-action-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    inline-size: 100%;
+  }
+
+  .submission-table.intern-accomplishments-table {
+    table-layout: fixed;
+    min-inline-size: 66rem;
+  }
+
+  .submission-table.intern-accomplishments-table col.intern-acc-col-date {
+    inline-size: 9.25rem;
+  }
+
+  .submission-table.intern-accomplishments-table col.intern-acc-col-activity {
+    inline-size: auto;
+  }
+
+  .submission-table.intern-accomplishments-table col.intern-acc-col-output {
+    inline-size: 20%;
+  }
+
+  .submission-table.intern-accomplishments-table col.intern-acc-col-attachment {
+    inline-size: 8.5rem;
+  }
+
+  .submission-table.intern-accomplishments-table col.intern-acc-col-status {
+    inline-size: 12.25rem;
+  }
+
+  .submission-table.intern-accomplishments-table col.intern-acc-col-action {
+    inline-size: 13.75rem;
+  }
+
+  .submission-table.intern-accomplishments-table thead th {
+    white-space: nowrap;
+    text-wrap: nowrap;
+    padding: 0.75rem 0.75rem;
+  }
+
+  .submission-table.intern-accomplishments-table tbody :is(th, td) {
+    padding: 0.875rem 0.75rem;
+    vertical-align: middle;
+  }
+
+  .submission-table.intern-accomplishments-table tbody th.intern-acc-date-cell {
+    position: static;
+    font-weight: 400;
+    white-space: nowrap;
+  }
+
+  .submission-table.intern-accomplishments-table :is(thead, tbody) tr > :first-child {
+    padding-inline-start: 1.25rem;
+  }
+
+  .submission-table.intern-accomplishments-table :is(thead, tbody) tr > :last-child {
+    padding-inline-end: 1.25rem;
+  }
+
+  .submission-table.intern-accomplishments-table .intern-acc-action-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.375rem;
+    inline-size: 100%;
+  }
 }
 
 .submission-table.submissions-scroll-table thead th,
@@ -1283,6 +1464,99 @@ dialog.review-drawer-dialog[open]:where(:not([data-closing])) {
     align-items: center;
     justify-content: flex-start;
   }
+
+  .submission-table.intern-accomplishments-table tbody tr {
+    border-block-end: 2px solid var(--color-rule);
+  }
+
+  .submission-table.intern-accomplishments-table tbody th.intern-acc-date-cell {
+    position: static;
+    padding: 0.75rem 1rem;
+    background-color: var(--color-surface-subtle);
+    font-weight: 500;
+    border-block-end: 1px solid var(--color-rule);
+  }
+
+  .submission-table.intern-accomplishments-table.is-compact tbody td {
+    grid-template-columns: 7.75rem minmax(0, 1fr);
+    align-items: start;
+    justify-items: start;
+    padding: 0.625rem 1rem;
+  }
+
+  .submission-table.intern-accomplishments-table tbody .intern-acc-action-wrap {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.5rem;
+  }
+
+  .submission-table.intern-tasks-table tbody tr {
+    border-block-end: 2px solid var(--color-rule);
+  }
+
+  .submission-table.intern-tasks-table tbody th.intern-task-primary-cell {
+    position: static;
+    padding: 1rem;
+    background-color: var(--color-surface);
+    font-weight: 400;
+    border-block-end: 1px solid color-mix(in oklab, var(--color-rule) 65%, transparent);
+  }
+
+  .submission-table.intern-tasks-table.is-compact tbody td {
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+    align-items: center;
+    justify-items: start;
+    padding: 0.625rem 1rem;
+  }
+
+  .submission-table.intern-tasks-table tbody td[data-label]::before {
+    padding-block-start: 0;
+  }
+
+  .submission-table.intern-tasks-table tbody .intern-task-action-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  .submission-table.intern-accomplishments-table tbody tr {
+    border-block-end: 2px solid var(--color-rule);
+  }
+
+  .submission-table.intern-accomplishments-table tbody th.intern-acc-date-cell {
+    position: static;
+    padding: 0.75rem 1rem;
+    background-color: var(--color-surface-subtle);
+    font-weight: 500;
+    border-block-end: 1px solid var(--color-rule);
+  }
+
+  .submission-table.intern-accomplishments-table.is-compact tbody td {
+    grid-template-columns: 7.75rem minmax(0, 1fr);
+    align-items: start;
+    justify-items: start;
+    padding: 0.625rem 1rem;
+  }
+
+  .submission-table.intern-accomplishments-table tbody .intern-acc-action-wrap {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.5rem;
+  }
+}
+
+/* Auto-expanding textareas using modern field-sizing with graceful fallback */
+textarea.auto-grow-textarea {
+  field-sizing: content;
+  inline-size: 100%;
+  height: auto;
+  min-block-size: 4.5rem;
+  max-block-size: 16rem;
+  resize: vertical;
 }
 
 /* Determinate internship progress bar (<progress> native semantics) */

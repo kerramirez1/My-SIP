@@ -17,6 +17,7 @@ import {
   resolveHostOrganizationName,
   runWithSchemaFallback,
 } from '../../lib/schemaCompat'
+import { isDraftAccomplishment } from '../../lib/submissionHelpers'
 import { supabase } from '../../lib/supabaseClient'
 import { useDocumentTitle } from '../../lib/useDocumentTitle'
 import { useFormValidationSync } from '../../lib/useFormValidationSync'
@@ -212,10 +213,18 @@ export function InternProfilePage() {
         )
         .eq('intern_id', internId)
         .order('attendance_date', { ascending: false }),
-      supabase
-        .from('accomplishments')
-        .select('id, status')
-        .eq('intern_id', internId),
+      runWithSchemaFallback(
+        () =>
+          supabase
+            .from('accomplishments')
+            .select('id, status, submitted_at')
+            .eq('intern_id', internId),
+        () =>
+          supabase
+            .from('accomplishments')
+            .select('id, status')
+            .eq('intern_id', internId),
+      ),
       supabase
         .from('tasks')
         .select('id, status, submitted_at')
@@ -283,8 +292,11 @@ export function InternProfilePage() {
 
     let pendingAccomplishmentsCount = 0
     for (const row of accomplishments) {
-      if (row.status === 'pending') pendingAccomplishmentsCount += 1
-      else if (row.status === 'returned') returnedCount += 1
+      if (row.status === 'pending' && !isDraftAccomplishment(row)) {
+        pendingAccomplishmentsCount += 1
+      } else if (row.status === 'returned') {
+        returnedCount += 1
+      }
     }
 
     let pendingSubmittedTasksCount = 0

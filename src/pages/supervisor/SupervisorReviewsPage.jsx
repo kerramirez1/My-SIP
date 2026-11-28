@@ -20,6 +20,10 @@ import {
   formatWeekdayCalendarDate,
 } from '../../lib/weekUtils'
 import {
+  InternDailyActivityUpdatesPanel,
+  SupervisorWeeklyReportNotifications,
+} from './SupervisorDailyUpdatesSection'
+import {
   AssignTaskDialog,
   PriorityBadge,
   ReviewDialog,
@@ -57,6 +61,8 @@ export function SupervisorReviewsPage() {
     internById,
     pendingItems,
     pendingCounts,
+    dailyActivityUpdates,
+    submittedWeeklyReports,
     reload,
   } = useSupervisorData(supervisorId)
 
@@ -174,7 +180,20 @@ export function SupervisorReviewsPage() {
           <span>Loading assigned interns and pending submissions…</span>
         </div>
       ) : (
-        <section className="overflow-hidden rounded-[6px] border border-rule bg-surface">
+        <div className="space-y-6">
+          <SupervisorWeeklyReportNotifications
+            supervisorId={supervisorId}
+            submittedWeeklyReports={submittedWeeklyReports}
+            onReviewReport={(report) => {
+              setPageSuccess('')
+              setQueueFilter('accomplishments')
+              if (report.firstPendingItem) {
+                setReviewItem(report.firstPendingItem)
+              }
+            }}
+          />
+
+          <section className="overflow-hidden rounded-[6px] border border-rule bg-surface">
           <div className="flex flex-col gap-3 border-b border-rule bg-surface-subtle px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h2
@@ -293,7 +312,7 @@ export function SupervisorReviewsPage() {
                   {filteredPendingItems.map((item) => {
                     const { row } = item
                     const submissionDateIso = extractIsoDatePart(
-                      item.type === 'tasks'
+                      item.type === 'tasks' || item.type === 'accomplishments'
                         ? row.submitted_at || row.created_at
                         : row.created_at,
                     )
@@ -476,6 +495,13 @@ export function SupervisorReviewsPage() {
             </div>
           )}
         </section>
+
+        <InternDailyActivityUpdatesPanel
+          dailyActivityUpdates={dailyActivityUpdates}
+          onAttachmentError={setAttachmentError}
+          headingId="reviews-daily-updates-heading"
+        />
+      </div>
       )}
 
       <ReviewDialog

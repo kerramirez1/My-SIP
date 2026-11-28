@@ -23,6 +23,30 @@ const SEVERITY_BADGE_CLASSES = {
   info: 'border-rule bg-surface-subtle text-ink-muted',
 }
 
+const WEEKLY_PROGRESS_BADGE_META = {
+  approved: {
+    label: 'Approved',
+    className: 'border-success-border/45 bg-success-tint text-success',
+  },
+  submitted: {
+    label: 'Submitted · Pending Review',
+    className: 'border-accent/40 bg-accent-tint text-accent',
+  },
+  in_progress_draft: {
+    label: 'Saved – Not Yet Submitted',
+    className:
+      'border-dashed border-input-border bg-surface-subtle text-ink-muted',
+  },
+  returned: {
+    label: 'Needs Revision',
+    className: 'border-error-border/45 bg-error-tint text-error',
+  },
+  not_started: {
+    label: 'No Entries Yet',
+    className: 'border-rule bg-surface text-ink-muted',
+  },
+}
+
 const MAX_OVERVIEW_ALERTS = 5
 const MAX_RECENT_SUBMISSIONS = 5
 
@@ -40,6 +64,8 @@ export function CoordinatorMonitoringPage() {
     attentionAlerts,
     supervisorWorkload,
     allSubmissions,
+    savedDailyActivityItems,
+    weeklyAccomplishmentProgress,
     totals,
     reload,
   } = useCoordinatorData()
@@ -500,6 +526,194 @@ export function CoordinatorMonitoringPage() {
                         </td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          {/* 3b. Weekly Accomplishment Progress & Saved Daily Activity */}
+          <section
+            aria-labelledby="weekly-accomplishment-progress-heading"
+            className="overflow-hidden rounded-[6px] border border-rule bg-surface"
+          >
+            <div className="flex flex-col gap-3 border-b border-rule bg-surface-subtle px-5 py-3.5 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h2
+                  id="weekly-accomplishment-progress-heading"
+                  className="text-sm font-semibold text-ink"
+                >
+                  Weekly Accomplishment Progress &amp; Saved Daily Activity
+                </h2>
+                <p className="mt-0.5 text-xs text-ink-muted">
+                  Current reporting week (
+                  <span className="font-medium tabular-nums text-ink">
+                    {weeklyAccomplishmentProgress.currentWeekLabel || '—'}
+                  </span>
+                  ) — tracks ongoing, incomplete, and unsubmitted weekly reports
+                  separately from pending approvals.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-xs tabular-nums text-ink-muted">
+                  <span className="font-medium text-ink">
+                    {weeklyAccomplishmentProgress.inProgressDraftCount}
+                  </span>{' '}
+                  in progress ·{' '}
+                  <span className="font-medium text-ink">
+                    {weeklyAccomplishmentProgress.submittedOrApprovedCount}
+                  </span>{' '}
+                  submitted ·{' '}
+                  <span className="font-medium text-ink">
+                    {weeklyAccomplishmentProgress.notStartedCount}
+                  </span>{' '}
+                  no entries
+                </span>
+                {savedDailyActivityItems.length > 0 ? (
+                  <Link
+                    to="/coordinator/submissions?tab=accomplishments&status=saved_not_submitted"
+                    className="text-xs font-medium text-accent underline-offset-4 hover:underline"
+                  >
+                    View all saved drafts ({savedDailyActivityItems.length}) →
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+
+            {internProgressRows.length === 0 ? (
+              <div className="px-5 py-8 text-sm text-ink-muted">
+                No active intern records to track for this week.
+              </div>
+            ) : (
+              <div
+                tabIndex={0}
+                role="region"
+                aria-labelledby="weekly-accomplishment-progress-heading"
+                className="table-wrapper"
+              >
+                <table className="submission-table is-compact">
+                  <caption className="visually-hidden">
+                    Per-intern weekly accomplishment progress and saved daily
+                    activity updates for the current reporting week
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Intern</th>
+                      <th scope="col">Supervisor</th>
+                      <th scope="col" className="w-56">
+                        Current Week Status
+                      </th>
+                      <th scope="col">Saved Daily Activity Progress</th>
+                      <th scope="col" className="col-action w-28">
+                        Action
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {internProgressRows.map((intern) => {
+                      const stateMeta =
+                        WEEKLY_PROGRESS_BADGE_META[
+                          intern.currentWeekAccomplishmentState
+                        ] ?? WEEKLY_PROGRESS_BADGE_META.not_started
+                      const focusRecord =
+                        intern.latestSavedDraftItem ||
+                        intern.latestCurrentWeekAccomplishment
+
+                      return (
+                        <tr key={`weekly-prog-${intern.id}`}>
+                          <th scope="row">
+                            <div className="min-w-0">
+                              <p className="font-medium text-ink">
+                                {intern.full_name}
+                              </p>
+                              <p className="mt-0.5 text-xs font-normal tabular-nums text-ink-muted">
+                                {intern.student_id_no || 'No student ID'}
+                              </p>
+                            </div>
+                          </th>
+                          <td
+                            data-label="Supervisor"
+                            className="text-xs text-ink-muted"
+                          >
+                            {intern.supervisorName}
+                          </td>
+                          <td data-label="Current Week Status">
+                            <span
+                              className={`inline-flex items-center rounded-[5px] border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${stateMeta.className}`}
+                            >
+                              {stateMeta.label}
+                            </span>
+                          </td>
+                          <td
+                            data-label="Saved Daily Activity Progress"
+                            className="text-xs text-ink-muted"
+                          >
+                            {intern.currentWeekDraftCount > 0 ? (
+                              <div className="min-w-0">
+                                <p className="font-medium tabular-nums text-ink">
+                                  {intern.currentWeekDraftCount}{' '}
+                                  {intern.currentWeekDraftCount === 1
+                                    ? 'saved daily entry'
+                                    : 'saved daily entries'}{' '}
+                                  (not yet submitted)
+                                  {intern.currentWeekSubmittedCount > 0
+                                    ? ` · ${intern.currentWeekSubmittedCount} submitted`
+                                    : ''}
+                                </p>
+                                {intern.latestSavedDraftItem ? (
+                                  <p className="mt-0.5 truncate text-ink-muted">
+                                    Latest:{' '}
+                                    {intern.latestSavedDraftItem.titleSummary} —{' '}
+                                    {intern.latestSavedDraftItem.row
+                                      .description ||
+                                      intern.latestSavedDraftItem.row.title}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : intern.currentWeekTotalAccomplishments > 0 ? (
+                              <span className="tabular-nums">
+                                {intern.currentWeekTotalAccomplishments}{' '}
+                                {intern.currentWeekTotalAccomplishments === 1
+                                  ? 'daily entry submitted'
+                                  : 'daily entries submitted'}
+                              </span>
+                            ) : intern.savedDraftCount > 0 ? (
+                              <span className="tabular-nums">
+                                No entries this week ({intern.savedDraftCount}{' '}
+                                unsubmitted{' '}
+                                {intern.savedDraftCount === 1
+                                  ? 'draft'
+                                  : 'drafts'}{' '}
+                                in prior weeks)
+                              </span>
+                            ) : (
+                              <span className="italic">
+                                No daily entries logged this week
+                              </span>
+                            )}
+                          </td>
+                          <td data-label="Action" className="col-action">
+                            {focusRecord ? (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedSubmission(focusRecord)}
+                                className="inline-flex min-h-8 items-center justify-center rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
+                              >
+                                Inspect
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedIntern(intern)}
+                                className="inline-flex min-h-8 items-center justify-center rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
+                              >
+                                Profile
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

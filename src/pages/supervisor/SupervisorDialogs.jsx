@@ -16,6 +16,7 @@ import { getDeadlineBadge } from '../../lib/internDashboardUtils'
 import { resolveHostOrganizationName } from '../../lib/schemaCompat'
 import {
   getAttachmentDisplayName,
+  isDraftAccomplishment,
   splitFilenameForDisplay,
 } from '../../lib/submissionHelpers'
 import { supabase } from '../../lib/supabaseClient'
@@ -340,6 +341,16 @@ function ReviewDialogBody({
   async function handleReviewDecision(decision) {
     if (!supabase || !supervisorId || !item) return
 
+    if (
+      item.type === 'accomplishments' &&
+      isDraftAccomplishment(item.row)
+    ) {
+      setReviewError(
+        'Saved daily entries that have not been submitted yet are view-only and cannot be formally reviewed.',
+      )
+      return
+    }
+
     const trimmedRemarks = reviewRemarks.trim()
     if (
       (decision === 'returned' || decision === 'rejected') &&
@@ -397,7 +408,7 @@ function ReviewDialogBody({
   const historyEntries = buildSubmissionHistory(item)
   const drawerTitle = DRAWER_TITLES[item.type] ?? 'Submission Review'
   const submissionTimestamp =
-    item.type === 'tasks'
+    item.type === 'tasks' || item.type === 'accomplishments'
       ? item.row.submitted_at || item.row.created_at
       : item.row.created_at
   const internProgram =

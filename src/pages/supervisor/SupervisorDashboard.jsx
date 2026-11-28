@@ -5,6 +5,10 @@ import { ChevronRightIcon, NavIcon, PlusIcon } from '../../components/Icons'
 import { useAuth } from '../../context/useAuth'
 import { useDocumentTitle } from '../../lib/useDocumentTitle'
 import { useSupervisorData } from '../../lib/useSupervisorData'
+import {
+  InternDailyActivityUpdatesPanel,
+  SupervisorWeeklyReportNotifications,
+} from './SupervisorDailyUpdatesSection'
 import { AssignTaskDialog } from './SupervisorDialogs'
 
 export function SupervisorDashboard() {
@@ -14,16 +18,21 @@ export function SupervisorDashboard() {
   const supervisorId = profile?.id
   const {
     loading,
-    loadError,
+    loadError: dataError,
     interns,
     internById,
     pendingCounts,
+    dailyActivityUpdates,
+    submittedWeeklyReports,
     recentReviews,
     reload,
   } = useSupervisorData(supervisorId)
 
   const [pageSuccess, setPageSuccess] = useState('')
+  const [attachmentError, setAttachmentError] = useState('')
   const [assignDialogOpen, setAssignDialogOpen] = useState(false)
+
+  const loadError = attachmentError || dataError
 
   const closeAssignDialog = useCallback(() => {
     setAssignDialogOpen(false)
@@ -130,6 +139,11 @@ export function SupervisorDashboard() {
         </div>
       ) : (
         <>
+          <SupervisorWeeklyReportNotifications
+            supervisorId={supervisorId}
+            submittedWeeklyReports={submittedWeeklyReports}
+          />
+
           <section className="overflow-hidden rounded-[6px] border border-rule bg-surface">
             <dl className="grid grid-cols-2 divide-y divide-rule sm:grid-cols-3 lg:grid-cols-5 lg:divide-x lg:divide-y-0">
               <div className="px-5 py-4 max-lg:border-e max-lg:border-rule">
@@ -215,6 +229,12 @@ export function SupervisorDashboard() {
               </Link>
             ))}
           </div>
+
+          <InternDailyActivityUpdatesPanel
+            dailyActivityUpdates={dailyActivityUpdates}
+            onAttachmentError={setAttachmentError}
+            headingId="dashboard-daily-updates-heading"
+          />
         </>
       )}
 

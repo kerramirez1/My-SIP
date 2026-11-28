@@ -13,7 +13,10 @@ import {
   buildInternDashboardMetrics,
   getRequiredInternshipHours,
 } from '../../lib/internDashboardUtils'
-import { resolveHostOrganizationName } from '../../lib/schemaCompat'
+import {
+  resolveHostOrganizationName,
+  runWithSchemaFallback,
+} from '../../lib/schemaCompat'
 import { hasReviewerFeedbackStatus } from '../../lib/submissionHelpers'
 import { supabase } from '../../lib/supabaseClient'
 import { useDocumentTitle } from '../../lib/useDocumentTitle'
@@ -91,13 +94,24 @@ export function InternDashboard() {
         )
         .eq('intern_id', internId)
         .order('attendance_date', { ascending: false }),
-      supabase
-        .from('accomplishments')
-        .select(
-          'id, week_of, title, status, reviewer_remarks, reviewed_at, created_at, updated_at',
-        )
-        .eq('intern_id', internId)
-        .order('created_at', { ascending: false }),
+      runWithSchemaFallback(
+        () =>
+          supabase
+            .from('accomplishments')
+            .select(
+              'id, week_of, entry_date, title, submitted_at, status, reviewer_remarks, reviewed_at, created_at, updated_at',
+            )
+            .eq('intern_id', internId)
+            .order('created_at', { ascending: false }),
+        () =>
+          supabase
+            .from('accomplishments')
+            .select(
+              'id, week_of, title, status, reviewer_remarks, reviewed_at, created_at, updated_at',
+            )
+            .eq('intern_id', internId)
+            .order('created_at', { ascending: false }),
+      ),
       supabase
         .from('tasks')
         .select(

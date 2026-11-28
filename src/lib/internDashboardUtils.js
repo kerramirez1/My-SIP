@@ -5,6 +5,10 @@ import {
   formatWallClockTime,
 } from './attendanceUtils.js'
 import {
+  getAccomplishmentDisplayStatus,
+  isDraftAccomplishment,
+} from './submissionHelpers.js'
+import {
   formatCalendarDate,
   formatWeekRange,
   getMondayOfWeek,
@@ -146,15 +150,40 @@ export function buildInternDashboardMetrics({
   const progressPercent = Number((progressRatio * 100).toFixed(1))
 
   // 2. Submission counts across all three modules
+  // Saved unsubmitted daily accomplishment drafts are tracked separately and
+  // NEVER counted as pending supervisor approvals.
   const allSubmissions = [...attendance, ...accomplishments, ...tasks]
   let pendingSubmissionsCount = 0
+  let draftAccomplishmentsCount = 0
   let returnedSubmissionsCount = 0
   let rejectedSubmissionsCount = 0
 
-  for (const row of allSubmissions) {
+  for (const row of attendance) {
     if (row.status === 'pending') pendingSubmissionsCount += 1
     else if (row.status === 'returned') returnedSubmissionsCount += 1
     else if (row.status === 'rejected') rejectedSubmissionsCount += 1
+  }
+
+  for (const row of accomplishments) {
+    if (isDraftAccomplishment(row)) {
+      draftAccomplishmentsCount += 1
+    } else if (row.status === 'pending') {
+      pendingSubmissionsCount += 1
+    } else if (row.status === 'returned') {
+      returnedSubmissionsCount += 1
+    } else if (row.status === 'rejected') {
+      rejectedSubmissionsCount += 1
+    }
+  }
+
+  for (const row of tasks) {
+    if (row.status === 'pending') {
+      if (row.submitted_at) pendingSubmissionsCount += 1
+    } else if (row.status === 'returned') {
+      returnedSubmissionsCount += 1
+    } else if (row.status === 'rejected') {
+      rejectedSubmissionsCount += 1
+    }
   }
 
   // 3. Tasks completion + upcoming/active tasks with deadlines
@@ -260,10 +289,15 @@ export function buildInternDashboardMetrics({
       type: 'Accomplishment',
       route: '/intern/accomplishments',
       title: row.title,
-      periodLabel: formatWeekRange(row.week_of),
-      status: row.status,
+      periodLabel: formatWeekRange(row.week_of, 5),
+      status: getAccomplishmentDisplayStatus(row),
       reviewerRemarks: row.reviewer_remarks,
-      activityAt: row.reviewed_at || row.updated_at || row.created_at || '',
+      activityAt:
+        row.reviewed_at ||
+        row.submitted_at ||
+        row.updated_at ||
+        row.created_at ||
+        '',
     })),
     ...tasks.map((row) => ({
       key: `task-${row.id}`,
@@ -295,6 +329,7 @@ export function buildInternDashboardMetrics({
     progressPercent,
     isGoalComplete: approvedAttendanceMinutes >= requiredMinutes,
     pendingSubmissionsCount,
+    draftAccomplishmentsCount,
     returnedSubmissionsCount,
     rejectedSubmissionsCount,
     needsRevisionCount: returnedSubmissionsCount + rejectedSubmissionsCount,

@@ -1,4 +1,26 @@
 const STATUS_META = {
+  saved_draft: {
+    label: 'Saved – Not Yet Submitted',
+    className:
+      'border-dashed border-input-border bg-surface-subtle text-ink-muted',
+    icon: (
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 16 16"
+        className="size-3.5 shrink-0"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      >
+        <path
+          d="M3.5 3.5h6.5L12.5 6v6.5h-9z"
+          strokeLinejoin="miter"
+          strokeLinecap="square"
+        />
+        <path d="M5.5 3.5v3h4v-3M5.5 12.5v-3h5v3" strokeLinecap="square" />
+      </svg>
+    ),
+  },
   pending: {
     label: 'Pending',
     className: 'border-rule bg-surface-subtle text-ink-muted',
