@@ -14,7 +14,11 @@ import {
   formatBreakText,
   useSupervisorData,
 } from '../../lib/useSupervisorData'
-import { formatCalendarDate, formatWeekRange } from '../../lib/weekUtils'
+import {
+  formatCalendarDate,
+  formatWeekRange,
+  formatWeekdayCalendarDate,
+} from '../../lib/weekUtils'
 import {
   AssignTaskDialog,
   PriorityBadge,
@@ -28,7 +32,11 @@ function collapseWhitespace(value) {
 }
 
 function formatAccomplishmentPreview(row) {
-  const title = collapseWhitespace(row.title) || 'Weekly Accomplishment'
+  const dateLabel = row.entry_date
+    ? formatWeekdayCalendarDate(row.entry_date)
+    : ''
+  const title =
+    dateLabel || collapseWhitespace(row.title) || 'Weekly Accomplishment'
   const summary = collapseWhitespace(row.description)
   return {
     title,
@@ -344,7 +352,7 @@ export function SupervisorReviewsPage() {
                               data-label="Reporting Period"
                               className="whitespace-nowrap text-xs tabular-nums text-ink-muted"
                             >
-                              {formatWeekRange(row.week_of)}
+                              {formatWeekRange(row.week_of, 5)}
                             </td>
 
                             <td
@@ -399,7 +407,7 @@ export function SupervisorReviewsPage() {
                                     ) : null}
                                   </p>
                                   <p className="truncate text-xs tabular-nums text-ink-muted">
-                                    Week of {formatWeekRange(row.week_of)}
+                                    Week of {formatWeekRange(row.week_of, 5)}
                                   </p>
                                 </div>
                               ) : (

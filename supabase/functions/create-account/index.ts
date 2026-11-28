@@ -9,6 +9,7 @@ const corsHeaders = {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const VALID_INTERNSHIP_TYPES = new Set(['on_campus', 'off_campus'])
 const DEFAULT_REQUIRED_HOURS = 500
 
 function jsonResponse(payload: Record<string, unknown>, status: number) {
@@ -164,8 +165,14 @@ Deno.serve(async (req: Request) => {
   let studentIdNo: string | null = null
   let schoolName: string | null = null
   let course: string | null = null
+  let yearLevel: string | null = null
+  let internshipType: string | null = null
   let internshipStartDate: string | null = null
-  const companyName = cleanOptionalText(body.company_name)
+  let internshipEndDate: string | null = null
+  const companyName =
+    cleanOptionalText(body.company_name) ??
+    cleanOptionalText(body.host_organization)
+  const departmentOffice = cleanOptionalText(body.department_office)
 
   if (role === 'intern') {
     supervisorId = cleanOptionalText(body.supervisor_id)
@@ -224,9 +231,43 @@ Deno.serve(async (req: Request) => {
       )
     }
 
+    internshipEndDate = cleanOptionalText(body.internship_end_date)
+    if (internshipEndDate && !ISO_DATE_PATTERN.test(internshipEndDate)) {
+      return jsonResponse(
+        { error: 'Internship end date must use YYYY-MM-DD format.' },
+        400,
+      )
+    }
+
+    if (
+      internshipStartDate &&
+      internshipEndDate &&
+      internshipEndDate < internshipStartDate
+    ) {
+      return jsonResponse(
+        {
+          error:
+            'Internship end date must be on or after the internship start date.',
+        },
+        400,
+      )
+    }
+
+    internshipType = cleanOptionalText(body.internship_type)
+    if (internshipType && !VALID_INTERNSHIP_TYPES.has(internshipType)) {
+      return jsonResponse(
+        {
+          error:
+            "Internship type must be either 'on_campus' or 'off_campus'.",
+        },
+        400,
+      )
+    }
+
     studentIdNo = cleanOptionalText(body.student_id_no)
     schoolName = cleanOptionalText(body.school_name)
     course = cleanOptionalText(body.course)
+    yearLevel = cleanOptionalText(body.year_level)
   }
 
   // 4. Create Auth user via service client
@@ -276,14 +317,25 @@ Deno.serve(async (req: Request) => {
     profileUpdate.required_hours = requiredHours
     if (studentIdNo !== null) profileUpdate.student_id_no = studentIdNo
     if (companyName !== null) profileUpdate.company_name = companyName
+    if (departmentOffice !== null) {
+      profileUpdate.department_office = departmentOffice
+    }
     if (schoolName !== null) profileUpdate.school_name = schoolName
     if (course !== null) profileUpdate.course = course
+    if (yearLevel !== null) profileUpdate.year_level = yearLevel
+    if (internshipType !== null) profileUpdate.internship_type = internshipType
     if (internshipStartDate !== null) {
       profileUpdate.internship_start_date = internshipStartDate
+    }
+    if (internshipEndDate !== null) {
+      profileUpdate.internship_end_date = internshipEndDate
     }
   } else {
     profileUpdate.supervisor_id = null
     if (companyName !== null) profileUpdate.company_name = companyName
+    if (departmentOffice !== null) {
+      profileUpdate.department_office = departmentOffice
+    }
   }
 
   const { data: updatedProfile, error: profileUpdateError } =

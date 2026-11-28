@@ -35,7 +35,7 @@ export function AuthLayout() {
               Academic internship management, unified.
             </h2>
             <p className="text-sm leading-[1.65] text-white/75">
-              One institutional workspace connecting students, host company
+              One institutional workspace connecting students, host organization
               supervisors, and university coordinators from placement to
               completion.
             </p>

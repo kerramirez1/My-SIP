@@ -10,7 +10,11 @@ const corsHeaders = {
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const VALID_INTERNSHIP_TYPES = new Set(['on_campus', 'off_campus'])
 const BAN_DURATION_PERMANENT = '876000h'
+
+const PROFILE_SELECT_FIELDS =
+  'id, full_name, role, supervisor_id, student_id_no, company_name, department_office, internship_type, school_name, course, year_level, internship_start_date, internship_end_date, required_hours, is_active, deactivated_at, deactivated_by, deactivated_reason, created_at'
 
 type ServiceClient = ReturnType<typeof createClient>
 
@@ -21,9 +25,13 @@ interface ProfileRow {
   supervisor_id: string | null
   student_id_no: string | null
   company_name: string | null
+  department_office: string | null
+  internship_type: 'on_campus' | 'off_campus' | null
   school_name: string | null
   course: string | null
+  year_level: string | null
   internship_start_date: string | null
+  internship_end_date: string | null
   required_hours: number
   is_active: boolean
   deactivated_at: string | null
@@ -97,6 +105,7 @@ async function computeRecordSummaryForUser(
   const [
     attInternRes,
     accInternRes,
+    reflInternRes,
     taskInternRes,
     assignedInternsRes,
     attRevRes,
@@ -110,6 +119,10 @@ async function computeRecordSummaryForUser(
       .eq('intern_id', targetUserId),
     serviceClient
       .from('accomplishments')
+      .select('id', { count: 'exact', head: true })
+      .eq('intern_id', targetUserId),
+    serviceClient
+      .from('weekly_accomplishment_reflections')
       .select('id', { count: 'exact', head: true })
       .eq('intern_id', targetUserId),
     serviceClient
@@ -155,7 +168,8 @@ async function computeRecordSummaryForUser(
   }
 
   const attendance = attInternRes.count ?? 0
-  const accomplishments = accInternRes.count ?? 0
+  const accomplishments =
+    (accInternRes.count ?? 0) + (reflInternRes.error ? 0 : (reflInternRes.count ?? 0))
   const tasks = taskInternRes.count ?? 0
   const assignedInterns = assignedInternsRes.count ?? 0
   const supervisorReviews =
@@ -328,14 +342,13 @@ Deno.serve(async (req: Request) => {
         emailById,
         attRowsRes,
         accRowsRes,
+        reflRowsRes,
         taskRowsRes,
         auditLogsRes,
       ] = await Promise.all([
         serviceClient
           .from('profiles')
-          .select(
-            'id, full_name, role, supervisor_id, student_id_no, company_name, school_name, course, internship_start_date, required_hours, is_active, deactivated_at, deactivated_by, deactivated_reason, created_at',
-          )
+          .select(PROFILE_SELECT_FIELDS)
           .order('role', { ascending: true })
           .order('full_name', { ascending: true }),
         listAllAuthEmails(serviceClient),
@@ -343,6 +356,9 @@ Deno.serve(async (req: Request) => {
           .from('weekly_attendance')
           .select('intern_id, reviewed_by'),
         serviceClient.from('accomplishments').select('intern_id, reviewed_by'),
+        serviceClient
+          .from('weekly_accomplishment_reflections')
+          .select('intern_id'),
         serviceClient
           .from('tasks')
           .select('intern_id, assigned_by, reviewed_by'),
@@ -393,6 +409,9 @@ Deno.serve(async (req: Request) => {
       for (const r of accRowsRes.data ?? []) {
         if (r.intern_id) getSummary(r.intern_id).accomplishments += 1
         if (r.reviewed_by) getSummary(r.reviewed_by).supervisorReviews += 1
+      }
+      for (const r of reflRowsRes.error ? [] : (reflRowsRes.data ?? [])) {
+        if (r.intern_id) getSummary(r.intern_id).accomplishments += 1
       }
       for (const r of taskRowsRes.data ?? []) {
         if (r.intern_id) getSummary(r.intern_id).tasks += 1
@@ -454,9 +473,7 @@ Deno.serve(async (req: Request) => {
     const { data: targetProfileData, error: targetProfileError } =
       await serviceClient
         .from('profiles')
-        .select(
-          'id, full_name, role, supervisor_id, student_id_no, company_name, school_name, course, internship_start_date, required_hours, is_active, deactivated_at, deactivated_by, deactivated_reason, created_at',
-        )
+        .select(PROFILE_SELECT_FIELDS)
         .eq('id', targetUserId)
         .maybeSingle()
 
@@ -550,7 +567,10 @@ Deno.serve(async (req: Request) => {
 
       const updates: Record<string, unknown> = {
         full_name: fullName,
-        company_name: cleanOptionalText(body.company_name),
+        company_name:
+          cleanOptionalText(body.company_name) ??
+          cleanOptionalText(body.host_organization),
+        department_office: cleanOptionalText(body.department_office),
       }
 
       if (targetProfile.role === 'intern') {
@@ -620,10 +640,42 @@ Deno.serve(async (req: Request) => {
           )
         }
 
+        const endDate = cleanOptionalText(body.internship_end_date)
+        if (endDate && !ISO_DATE_PATTERN.test(endDate)) {
+          return jsonResponse(
+            { error: 'Internship end date must use YYYY-MM-DD format.' },
+            400,
+          )
+        }
+
+        if (startDate && endDate && endDate < startDate) {
+          return jsonResponse(
+            {
+              error:
+                'Internship end date must be on or after the internship start date.',
+            },
+            400,
+          )
+        }
+
+        const internshipType = cleanOptionalText(body.internship_type)
+        if (internshipType && !VALID_INTERNSHIP_TYPES.has(internshipType)) {
+          return jsonResponse(
+            {
+              error:
+                "Internship type must be either 'on_campus' or 'off_campus'.",
+            },
+            400,
+          )
+        }
+
         updates.student_id_no = cleanOptionalText(body.student_id_no)
         updates.school_name = cleanOptionalText(body.school_name)
         updates.course = cleanOptionalText(body.course)
+        updates.year_level = cleanOptionalText(body.year_level)
+        updates.internship_type = internshipType
         updates.internship_start_date = startDate
+        updates.internship_end_date = endDate
       }
 
       const { error: updateErr } = await serviceClient

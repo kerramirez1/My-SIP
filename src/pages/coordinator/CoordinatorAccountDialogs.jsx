@@ -4,6 +4,11 @@ import { FormField } from '../../components/FormField'
 import { SubmissionDialog } from '../../components/SubmissionDialog'
 import { extractEdgeFunctionError } from '../../lib/edgeFunctionUtils'
 import { DEFAULT_REQUIRED_INTERNSHIP_HOURS } from '../../lib/internDashboardUtils'
+import {
+  formatInternshipPeriod,
+  formatInternshipTypeLabel,
+  resolveHostOrganizationName,
+} from '../../lib/schemaCompat'
 import { supabase } from '../../lib/supabaseClient'
 import { useFormValidationSync } from '../../lib/useFormValidationSync'
 import { formatCalendarDate } from '../../lib/weekUtils'
@@ -382,17 +387,43 @@ export function ViewAccountDialog({
 
           <dl className="grid grid-cols-1 gap-3 rounded-[5px] border border-rule bg-surface px-4 py-3 sm:grid-cols-2">
             <div>
-              <dt className="text-ink-muted">Company</dt>
+              <dt className="text-ink-muted">Host Organization / Institution</dt>
               <dd className="mt-0.5 font-medium text-ink">
-                {account.company_name || '—'}
+                {resolveHostOrganizationName(account) || '—'}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-ink-muted">Office / Department</dt>
+              <dd className="mt-0.5 font-medium text-ink">
+                {account.department_office || '—'}
               </dd>
             </div>
             {isIntern ? (
               <>
                 <div>
-                  <dt className="text-ink-muted">Student ID No.</dt>
+                  <dt className="text-ink-muted">Student ID</dt>
                   <dd className="mt-0.5 font-medium tabular-nums text-ink">
                     {account.student_id_no || '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-ink-muted">Internship type</dt>
+                  <dd className="mt-0.5 font-medium text-ink">
+                    {formatInternshipTypeLabel(account.internship_type) || '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-ink-muted">School</dt>
+                  <dd className="mt-0.5 font-medium text-ink">
+                    {account.school_name || '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-ink-muted">Program &amp; Year Level</dt>
+                  <dd className="mt-0.5 font-medium text-ink">
+                    {[account.course, account.year_level]
+                      .filter(Boolean)
+                      .join(' – ') || '—'}
                   </dd>
                 </div>
                 <div>
@@ -402,27 +433,21 @@ export function ViewAccountDialog({
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-ink-muted">Required hours</dt>
+                  <dt className="text-ink-muted">Required internship hours</dt>
                   <dd className="mt-0.5 font-medium tabular-nums text-ink">
                     {account.required_hours
                       ? `${account.required_hours} hrs`
                       : '—'}
                   </dd>
                 </div>
-                <div>
-                  <dt className="text-ink-muted">School &amp; course</dt>
-                  <dd className="mt-0.5 font-medium text-ink">
-                    {[account.course, account.school_name]
-                      .filter(Boolean)
-                      .join(' — ') || '—'}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-ink-muted">Internship start date</dt>
+                <div className="sm:col-span-2">
+                  <dt className="text-ink-muted">Internship period</dt>
                   <dd className="mt-0.5 tabular-nums text-ink">
-                    {account.internship_start_date
-                      ? formatCalendarDate(account.internship_start_date)
-                      : '—'}
+                    {formatInternshipPeriod(
+                      account.internship_start_date,
+                      account.internship_end_date,
+                      formatCalendarDate,
+                    ) || '—'}
                   </dd>
                 </div>
               </>
@@ -506,13 +531,21 @@ export function ViewAccountDialog({
 function EditAccountForm({ account, supervisors, onClose, onSaved }) {
   const isIntern = account.role === 'intern'
   const [fullName, setFullName] = useState(account.full_name || '')
+  const [internshipType, setInternshipType] = useState(
+    account.internship_type || 'off_campus',
+  )
   const [companyName, setCompanyName] = useState(account.company_name || '')
+  const [departmentOffice, setDepartmentOffice] = useState(
+    account.department_office || '',
+  )
   const [studentIdNo, setStudentIdNo] = useState(account.student_id_no || '')
   const [schoolName, setSchoolName] = useState(account.school_name || '')
   const [course, setCourse] = useState(account.course || '')
+  const [yearLevel, setYearLevel] = useState(account.year_level || '')
   const [startDate, setStartDate] = useState(
     account.internship_start_date || '',
   )
+  const [endDate, setEndDate] = useState(account.internship_end_date || '')
   const [requiredHours, setRequiredHours] = useState(
     String(account.required_hours || DEFAULT_REQUIRED_INTERNSHIP_HOURS),
   )
@@ -550,29 +583,45 @@ function EditAccountForm({ account, supervisors, onClose, onSaved }) {
         setErrorMsg('An assigned supervisor is required for intern accounts.')
         return
       }
+
+      if (startDate.trim() && endDate.trim() && endDate.trim() < startDate.trim()) {
+        setErrorMsg(
+          'Internship end date must be on or after the internship start date.',
+        )
+        return
+      }
     }
 
     setSaving(true)
     setErrorMsg('')
+
+    const resolvedHostOrg =
+      companyName.trim() ||
+      (isIntern && internshipType === 'on_campus' ? schoolName.trim() : '')
 
     const body = isIntern
       ? {
           action: 'update_account',
           target_user_id: account.id,
           full_name: trimmedName,
-          company_name: companyName.trim() || null,
+          internship_type: internshipType || null,
+          company_name: resolvedHostOrg || null,
+          department_office: departmentOffice.trim() || null,
           supervisor_id: supervisorId || null,
           student_id_no: studentIdNo.trim() || null,
           school_name: schoolName.trim() || null,
           course: course.trim() || null,
+          year_level: yearLevel.trim() || null,
           required_hours: parsedHours,
           internship_start_date: startDate.trim() || null,
+          internship_end_date: endDate.trim() || null,
         }
       : {
           action: 'update_account',
           target_user_id: account.id,
           full_name: trimmedName,
           company_name: companyName.trim() || null,
+          department_office: departmentOffice.trim() || null,
         }
 
     const { data, error } = await supabase.functions.invoke('manage-account', {
@@ -628,100 +677,198 @@ function EditAccountForm({ account, supervisors, onClose, onSaved }) {
 
         {isIntern ? (
           <>
-            <div className="field-group flex flex-col gap-1.5">
-              <label
-                htmlFor="edit-acct-supervisor"
-                className="text-sm font-medium leading-[1.4] text-ink"
-              >
-                Assigned supervisor
-              </label>
-              <select
-                id="edit-acct-supervisor"
-                required
-                value={supervisorId}
-                onChange={(e) => setSupervisorId(e.target.value)}
-                className="form-control min-h-11 w-full rounded-[5px] border border-input-border bg-surface px-3.5 py-2.5 text-sm text-ink hover:border-ink"
-              >
-                <option value="">Unassigned</option>
-                {assignableSupervisors.map((sup) => (
-                  <option key={sup.id} value={sup.id}>
-                    {sup.full_name}
-                    {sup.is_active === false ? ' (Deactivated)' : ''}
-                    {sup.company_name ? ` — ${sup.company_name}` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <fieldset className="space-y-4 border-t border-rule pt-4">
+              <legend className="text-xs font-semibold uppercase tracking-[0.04em] text-ink-muted">
+                Intern Information
+              </legend>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FormField
-                id="edit-acct-student-id"
-                name="student_id_no"
-                label="Student ID No."
-                type="text"
-                value={studentIdNo}
-                onChange={(e) => setStudentIdNo(e.target.value)}
-              />
-              <FormField
-                id="edit-acct-hours"
-                name="required_hours"
-                label="Required hours"
-                type="number"
-                min={1}
-                step={1}
-                required
-                value={requiredHours}
-                onChange={(e) => setRequiredHours(e.target.value)}
-              />
-            </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <FormField
+                  id="edit-acct-student-id"
+                  name="student_id_no"
+                  label="Student ID"
+                  type="text"
+                  value={studentIdNo}
+                  onChange={(e) => setStudentIdNo(e.target.value)}
+                />
+                <FormField
+                  id="edit-acct-year-level"
+                  name="year_level"
+                  label="Year level"
+                  type="text"
+                  list="edit-year-level-options"
+                  placeholder="e.g. 4th Year"
+                  value={yearLevel}
+                  onChange={(e) => setYearLevel(e.target.value)}
+                />
+                <datalist id="edit-year-level-options">
+                  <option value="3rd Year" />
+                  <option value="4th Year" />
+                  <option value="5th Year" />
+                </datalist>
+              </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FormField
-                id="edit-acct-school"
-                name="school_name"
-                label="School name"
-                type="text"
-                value={schoolName}
-                onChange={(e) => setSchoolName(e.target.value)}
-              />
-              <FormField
-                id="edit-acct-course"
-                name="course"
-                label="Course"
-                type="text"
-                value={course}
-                onChange={(e) => setCourse(e.target.value)}
-              />
-            </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <FormField
+                  id="edit-acct-school"
+                  name="school_name"
+                  label="School"
+                  type="text"
+                  value={schoolName}
+                  onChange={(e) => setSchoolName(e.target.value)}
+                />
+                <FormField
+                  id="edit-acct-course"
+                  name="course"
+                  label="Course / Program"
+                  type="text"
+                  value={course}
+                  onChange={(e) => setCourse(e.target.value)}
+                />
+              </div>
+            </fieldset>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FormField
-                id="edit-acct-company"
-                name="company_name"
-                label="Company name"
-                type="text"
-                value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
-              />
-              <FormField
-                id="edit-acct-start-date"
-                name="internship_start_date"
-                label="Internship start date"
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </div>
+            <fieldset className="space-y-4 border-t border-rule pt-4">
+              <legend className="text-xs font-semibold uppercase tracking-[0.04em] text-ink-muted">
+                Internship Placement Information
+              </legend>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="field-group flex flex-col gap-1.5">
+                  <label
+                    htmlFor="edit-acct-internship-type"
+                    className="text-sm font-medium leading-[1.4] text-ink"
+                  >
+                    Internship type
+                  </label>
+                  <select
+                    id="edit-acct-internship-type"
+                    name="internship_type"
+                    value={internshipType}
+                    onChange={(e) => {
+                      const nextType = e.target.value
+                      setInternshipType(nextType)
+                      if (
+                        nextType === 'on_campus' &&
+                        !companyName.trim() &&
+                        schoolName.trim()
+                      ) {
+                        setCompanyName(schoolName.trim())
+                      }
+                    }}
+                    className="form-control min-h-11 w-full rounded-[5px] border border-input-border bg-surface px-3.5 py-2.5 text-sm text-ink hover:border-ink"
+                  >
+                    <option value="off_campus">Off-campus</option>
+                    <option value="on_campus">On-campus</option>
+                  </select>
+                </div>
+
+                <div className="field-group flex flex-col gap-1.5">
+                  <label
+                    htmlFor="edit-acct-supervisor"
+                    className="text-sm font-medium leading-[1.4] text-ink"
+                  >
+                    Assigned supervisor
+                  </label>
+                  <select
+                    id="edit-acct-supervisor"
+                    required
+                    value={supervisorId}
+                    onChange={(e) => setSupervisorId(e.target.value)}
+                    className="form-control min-h-11 w-full rounded-[5px] border border-input-border bg-surface px-3.5 py-2.5 text-sm text-ink hover:border-ink"
+                  >
+                    <option value="">Unassigned</option>
+                    {assignableSupervisors.map((sup) => (
+                      <option key={sup.id} value={sup.id}>
+                        {sup.full_name}
+                        {sup.is_active === false ? ' (Deactivated)' : ''}
+                        {sup.company_name ? ` — ${sup.company_name}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <FormField
+                  id="edit-acct-company"
+                  name="company_name"
+                  label="Host Organization / Institution"
+                  type="text"
+                  placeholder={
+                    internshipType === 'on_campus'
+                      ? 'e.g. Romblon State University – Cajidiocan Campus'
+                      : 'e.g. Acme Tech Corp'
+                  }
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                />
+                <FormField
+                  id="edit-acct-department-office"
+                  name="department_office"
+                  label="Office / Department"
+                  type="text"
+                  placeholder={
+                    internshipType === 'on_campus'
+                      ? 'e.g. Information and Communications Technology Office'
+                      : 'e.g. Information Technology Department'
+                  }
+                  value={departmentOffice}
+                  onChange={(e) => setDepartmentOffice(e.target.value)}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <FormField
+                  id="edit-acct-start-date"
+                  name="internship_start_date"
+                  label="Internship start date"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+                <FormField
+                  id="edit-acct-end-date"
+                  name="internship_end_date"
+                  label="Internship end date"
+                  type="date"
+                  min={startDate || undefined}
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
+                <FormField
+                  id="edit-acct-hours"
+                  name="required_hours"
+                  label="Required internship hours"
+                  type="number"
+                  min={1}
+                  step={1}
+                  required
+                  value={requiredHours}
+                  onChange={(e) => setRequiredHours(e.target.value)}
+                />
+              </div>
+            </fieldset>
           </>
         ) : (
-          <FormField
-            id="edit-acct-sup-company"
-            name="company_name"
-            label="Company name"
-            type="text"
-            value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
-          />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <FormField
+              id="edit-acct-sup-company"
+              name="company_name"
+              label="Host Organization / Institution"
+              type="text"
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+            />
+            <FormField
+              id="edit-acct-sup-department"
+              name="department_office"
+              label="Office / Department"
+              type="text"
+              value={departmentOffice}
+              onChange={(e) => setDepartmentOffice(e.target.value)}
+            />
+          </div>
         )}
 
         <div className="flex flex-wrap items-center justify-end gap-2.5 border-t border-rule pt-4">

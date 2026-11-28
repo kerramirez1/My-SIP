@@ -103,7 +103,7 @@ export function CoordinatorReportsPage() {
         academicYear === 'all' ? 'All academic years' : academicYear,
       semester: semester === 'all' ? 'All semesters' : semester,
       batch: batch === 'all' ? 'All batches' : batch,
-      company: company === 'all' ? 'All companies' : company,
+      company: company === 'all' ? 'All host organizations' : company,
       supervisor: supName,
       dateRange:
         dateFrom || dateTo
@@ -411,7 +411,7 @@ export function CoordinatorReportsPage() {
               htmlFor="rep-filter-company"
               className="text-xs font-medium text-ink-muted"
             >
-              Company
+              Host Organization / Institution
             </label>
             <select
               id="rep-filter-company"
@@ -419,7 +419,7 @@ export function CoordinatorReportsPage() {
               onChange={(e) => setCompany(e.target.value)}
               className="min-h-10 w-full rounded-[5px] border border-input-border bg-surface px-2.5 text-xs text-ink hover:border-ink"
             >
-              <option value="all">All companies</option>
+              <option value="all">All host organizations</option>
               {filterOptions.companies.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -1002,7 +1002,7 @@ export function CoordinatorReportsPage() {
                   <thead>
                     <tr>
                       <th scope="col">Supervisor</th>
-                      <th scope="col">Company</th>
+                      <th scope="col">Host Organization / Institution</th>
                       <th scope="col" className="col-num w-32">
                         Assigned Interns
                       </th>
@@ -1030,7 +1030,7 @@ export function CoordinatorReportsPage() {
                           {sup.full_name}
                         </th>
                         <td
-                          data-label="Company"
+                          data-label="Host Organization / Institution"
                           className="text-xs text-ink-muted"
                         >
                           {sup.company_name || '—'}

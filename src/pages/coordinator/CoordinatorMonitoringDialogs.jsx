@@ -5,12 +5,18 @@ import { AlertMessage } from '../../components/AlertMessage'
 import { FormField } from '../../components/FormField'
 import { PaperclipIcon } from '../../components/Icons'
 import { SubmissionDialog } from '../../components/SubmissionDialog'
+import { resolveWeeklyReflection } from '../../lib/accomplishmentDocument'
 import {
   formatDecimalHours,
   formatDurationMinutes,
   formatWallClockTime,
 } from '../../lib/attendanceUtils'
 import { getDeadlineBadge } from '../../lib/internDashboardUtils'
+import {
+  formatInternshipPeriod,
+  formatInternshipTypeLabel,
+  resolveHostOrganizationName,
+} from '../../lib/schemaCompat'
 import {
   getAttachmentDisplayName,
   splitFilenameForDisplay,
@@ -21,7 +27,11 @@ import {
   extractIsoDatePart,
   formatBreakText,
 } from '../../lib/useCoordinatorData'
-import { formatCalendarDate, formatWeekRange } from '../../lib/weekUtils'
+import {
+  formatCalendarDate,
+  formatWeekRange,
+  formatWeekdayCalendarDate,
+} from '../../lib/weekUtils'
 
 const PRIORITY_META = {
   high: {
@@ -189,24 +199,44 @@ export function InternDetailDialog({
               </dd>
             </div>
             <div>
-              <dt className="text-ink-muted">Company</dt>
+              <dt className="text-ink-muted">Host Organization / Institution</dt>
               <dd className="mt-0.5 font-medium text-ink">
-                {intern.company_name || '—'}
+                {resolveHostOrganizationName(intern) || '—'}
               </dd>
             </div>
             <div>
-              <dt className="text-ink-muted">School &amp; course</dt>
+              <dt className="text-ink-muted">Office / Department</dt>
               <dd className="mt-0.5 font-medium text-ink">
-                {[intern.course, intern.school_name].filter(Boolean).join(' — ') ||
-                  '—'}
+                {intern.department_office || '—'}
               </dd>
             </div>
             <div>
-              <dt className="text-ink-muted">Internship start date</dt>
+              <dt className="text-ink-muted">School &amp; program</dt>
+              <dd className="mt-0.5 font-medium text-ink">
+                {[
+                  [intern.course, intern.year_level]
+                    .filter(Boolean)
+                    .join(' – '),
+                  intern.school_name,
+                ]
+                  .filter(Boolean)
+                  .join(' · ') || '—'}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-ink-muted">Internship type</dt>
+              <dd className="mt-0.5 font-medium text-ink">
+                {formatInternshipTypeLabel(intern.internship_type) || '—'}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-ink-muted">Internship period</dt>
               <dd className="mt-0.5 tabular-nums text-ink">
-                {intern.internship_start_date
-                  ? formatCalendarDate(intern.internship_start_date)
-                  : '—'}
+                {formatInternshipPeriod(
+                  intern.internship_start_date,
+                  intern.internship_end_date,
+                  formatCalendarDate,
+                ) || '—'}
                 {!intern.hasStarted ? (
                   <span className="ms-1.5 text-accent">(Upcoming)</span>
                 ) : null}
@@ -374,7 +404,7 @@ export function SupervisorDetailDialog({
         <div className="space-y-4 text-xs">
           <dl className="grid grid-cols-2 gap-3 rounded-[5px] border border-rule bg-surface-subtle px-4 py-3 sm:grid-cols-5">
             <div>
-              <dt className="text-ink-muted">Company</dt>
+              <dt className="text-ink-muted">Host Organization / Institution</dt>
               <dd className="mt-0.5 font-medium text-ink">
                 {supervisor.company_name || '—'}
               </dd>
@@ -597,68 +627,92 @@ export function SubmissionDetailDialog({
                 </div>
               </dl>
             ) : item.kind === 'accomplishments' ? (
-              <div className="space-y-2.5">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-ink">
-                      {item.row.title}
-                    </p>
-                    <p className="mt-0.5 tabular-nums text-ink-muted">
-                      Week of {formatWeekRange(item.row.week_of)}
-                    </p>
+              (() => {
+                const weekReflection = resolveWeeklyReflection(
+                  item.weeklyReflection,
+                  item.weekRows ?? [item.row],
+                )
+                return (
+                  <div className="space-y-2.5">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-ink">
+                          {item.row.entry_date
+                            ? formatWeekdayCalendarDate(item.row.entry_date)
+                            : item.row.title}
+                        </p>
+                        <p className="mt-0.5 tabular-nums text-ink-muted">
+                          Reporting Period: {formatWeekRange(item.row.week_of, 5)}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setDocumentKey(item.key)}
+                        className="inline-flex min-h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-[5px] border border-rule bg-surface px-2.5 text-xs font-medium text-ink hover:bg-surface-subtle"
+                      >
+                        View weekly document
+                      </button>
+                    </div>
+                    {item.row.description ? (
+                      <div>
+                        <p className="font-medium text-ink-muted">
+                          Activities performed
+                        </p>
+                        <p className="mt-0.5 whitespace-pre-line text-ink text-pretty break-words">
+                          {item.row.description}
+                        </p>
+                      </div>
+                    ) : null}
+                    <div>
+                      <p className="font-medium text-ink-muted">
+                        Output / Result
+                      </p>
+                      <p
+                        className={`mt-0.5 whitespace-pre-line text-pretty break-words ${
+                          item.row.output_result?.trim()
+                            ? 'text-ink'
+                            : 'italic text-ink-muted'
+                        }`}
+                      >
+                        {item.row.output_result?.trim() || 'Not provided'}
+                      </p>
+                    </div>
+                    {weekReflection.skills_acquired?.trim() ? (
+                      <div>
+                        <p className="font-medium text-ink-muted">
+                          Weekly skills acquired
+                        </p>
+                        <p className="mt-0.5 whitespace-pre-line text-ink text-pretty break-words">
+                          {weekReflection.skills_acquired}
+                        </p>
+                      </div>
+                    ) : null}
+                    {weekReflection.challenges_encountered?.trim() ? (
+                      <div>
+                        <p className="font-medium text-ink-muted">
+                          Weekly challenges encountered
+                        </p>
+                        <p className="mt-0.5 whitespace-pre-line text-ink text-pretty break-words">
+                          {weekReflection.challenges_encountered}
+                        </p>
+                      </div>
+                    ) : null}
+                    {weekReflection.lessons_learned?.trim() ? (
+                      <div>
+                        <p className="font-medium text-ink-muted">
+                          Weekly lessons learned / next steps
+                        </p>
+                        <p className="mt-0.5 whitespace-pre-line text-ink text-pretty break-words">
+                          {weekReflection.lessons_learned}
+                        </p>
+                      </div>
+                    ) : null}
+                    <CoordinatorAttachmentControl
+                      objectPath={item.row.attachment_url}
+                    />
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setDocumentKey(item.key)}
-                    className="inline-flex min-h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-[5px] border border-rule bg-surface px-2.5 text-xs font-medium text-ink hover:bg-surface-subtle"
-                  >
-                    View document
-                  </button>
-                </div>
-                {item.row.description ? (
-                  <div>
-                    <p className="font-medium text-ink-muted">
-                      Activities performed
-                    </p>
-                    <p className="mt-0.5 whitespace-pre-line text-ink text-pretty break-words">
-                      {item.row.description}
-                    </p>
-                  </div>
-                ) : null}
-                {item.row.skills_acquired ? (
-                  <div>
-                    <p className="font-medium text-ink-muted">
-                      Skills acquired
-                    </p>
-                    <p className="mt-0.5 whitespace-pre-line text-ink text-pretty break-words">
-                      {item.row.skills_acquired}
-                    </p>
-                  </div>
-                ) : null}
-                {item.row.challenges_encountered ? (
-                  <div>
-                    <p className="font-medium text-ink-muted">
-                      Challenges encountered
-                    </p>
-                    <p className="mt-0.5 whitespace-pre-line text-ink text-pretty break-words">
-                      {item.row.challenges_encountered}
-                    </p>
-                  </div>
-                ) : null}
-                {item.row.lessons_learned ? (
-                  <div>
-                    <p className="font-medium text-ink-muted">
-                      Lessons learned
-                    </p>
-                    <p className="mt-0.5 whitespace-pre-line text-ink text-pretty break-words">
-                      {item.row.lessons_learned}
-                    </p>
-                  </div>
-                ) : null}
-                <CoordinatorAttachmentControl
-                  objectPath={item.row.attachment_url}
-                />
-              </div>
+                )
+              })()
             ) : (
               <div className="space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -831,15 +885,26 @@ export function SubmissionDetailDialog({
       <AccomplishmentDocumentDialog
         open={isDocumentOpen}
         onClose={() => setDocumentKey('')}
+        rows={isDocumentOpen ? (item.weekRows ?? [item.row]) : null}
         row={isDocumentOpen ? item.row : null}
+        weekOf={isDocumentOpen ? item.row?.week_of : ''}
+        weeklyReflection={isDocumentOpen ? item.weeklyReflection : null}
         internName={item?.internName}
         studentIdNo={item?.studentIdNo}
         course={item?.course}
+        yearLevel={item?.yearLevel}
         schoolName={item?.schoolName}
+        internshipType={item?.internshipType}
+        hostOrganization={item?.hostOrganization}
         companyName={item?.companyName}
+        departmentOffice={item?.departmentOffice}
         supervisorName={
           item?.supervisorName === '—' ? '' : item?.supervisorName
         }
+        reviewerName={item?.reviewerName}
+        requiredHours={item?.requiredHours}
+        internshipStartDate={item?.internshipStartDate}
+        internshipEndDate={item?.internshipEndDate}
       />
     </>
   )

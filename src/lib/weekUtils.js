@@ -13,6 +13,8 @@ const MONTH_NAMES = [
   'Dec',
 ]
 
+const WEEKDAY_SHORT_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
 function pad2(value) {
   return String(value).padStart(2, '0')
 }
@@ -135,4 +137,29 @@ export function formatWeekRange(weekOfIso, spanDays = 6) {
   const endLabel = `${MONTH_NAMES[endParts.month - 1]} ${endParts.day}, ${endParts.year}`
 
   return `${monLabel} – ${endLabel}`
+}
+
+/**
+ * Returns the day of week (0 = Sunday, 1 = Monday ... 6 = Saturday) for an
+ * ISO calendar date (YYYY-MM-DD) without timezone drift, or null if invalid.
+ * @param {string} isoDate
+ * @returns {number | null}
+ */
+export function getIsoDayOfWeek(isoDate) {
+  const parts = parseIsoParts(isoDate)
+  if (!parts) return null
+  const utc = new Date(Date.UTC(parts.year, parts.month - 1, parts.day))
+  return utc.getUTCDay()
+}
+
+/**
+ * Formats an ISO calendar date with weekday prefix, e.g. "Mon, Nov 23, 2026".
+ * @param {string} isoDate
+ * @returns {string}
+ */
+export function formatWeekdayCalendarDate(isoDate) {
+  const dayIdx = getIsoDayOfWeek(isoDate)
+  const dateLabel = formatCalendarDate(isoDate)
+  if (dayIdx === null || !dateLabel) return dateLabel
+  return `${WEEKDAY_SHORT_NAMES[dayIdx]}, ${dateLabel}`
 }

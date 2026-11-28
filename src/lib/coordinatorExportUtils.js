@@ -73,7 +73,7 @@ export function buildMonitoringExcelWorkbook({
       ['Academic Year', filterSummary.academicYear],
       ['Semester', filterSummary.semester],
       ['Internship Batch', filterSummary.batch],
-      ['Company', filterSummary.company],
+      ['Host Organization / Institution', filterSummary.company],
       ['Supervisor', filterSummary.supervisor],
       ['Date Range', filterSummary.dateRange],
       ['Submission Scope', filterSummary.submissionFilters],
@@ -107,8 +107,11 @@ export function buildMonitoringExcelWorkbook({
       'Intern Name',
       'Student ID',
       'School',
-      'Course',
-      'Company',
+      'Course / Program',
+      'Year Level',
+      'Internship Type',
+      'Host Organization / Institution',
+      'Office / Department',
       'Assigned Supervisor',
       'Approved Hours',
       'Required Hours',
@@ -123,7 +126,14 @@ export function buildMonitoringExcelWorkbook({
       i.student_id_no ?? '',
       i.school_name ?? '',
       i.course ?? '',
+      i.year_level ?? '',
+      i.internship_type === 'on_campus'
+        ? 'On-campus'
+        : i.internship_type === 'off_campus'
+          ? 'Off-campus'
+          : '',
       i.company_name ?? '',
+      i.department_office ?? '',
       i.supervisorName === '—' ? '' : i.supervisorName,
       Number(i.approvedHours.toFixed(2)),
       i.requiredHours,
@@ -139,7 +149,7 @@ export function buildMonitoringExcelWorkbook({
     'Supervisor Workload',
     [
       'Supervisor Name',
-      'Company',
+      'Host Organization / Institution',
       'Assigned Interns',
       'Pending Reviews',
       'Approved Submissions',
@@ -446,7 +456,7 @@ export function buildMonitoringPdfHtml({
     Academic Year: ${escapeHtml(filterSummary.academicYear)} |
     Semester: ${escapeHtml(filterSummary.semester)} |
     Batch: ${escapeHtml(filterSummary.batch)} |
-    Company: ${escapeHtml(filterSummary.company)} |
+    Host Organization / Institution: ${escapeHtml(filterSummary.company)} |
     Supervisor: ${escapeHtml(filterSummary.supervisor)} |
     Date Range: ${escapeHtml(filterSummary.dateRange)} |
     Explorer: ${escapeHtml(filterSummary.submissionFilters)}
@@ -503,7 +513,7 @@ export function buildMonitoringPdfHtml({
   <table>
     <thead>
       <tr>
-        <th>Intern</th><th>Student ID</th><th>Company</th><th>Supervisor</th>
+        <th>Intern</th><th>Student ID</th><th>Host Organization / Institution</th><th>Supervisor</th>
         <th class="num">Approved</th><th class="num">Required</th><th class="num">Progress</th><th class="num">Pending</th>
       </tr>
     </thead>

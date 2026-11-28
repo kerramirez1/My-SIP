@@ -6,12 +6,14 @@ import { CloseIcon, PaperclipIcon } from '../../components/Icons'
 import { StatusBadge } from '../../components/StatusBadge'
 import { SubmissionDialog } from '../../components/SubmissionDialog'
 import { useAuth } from '../../context/useAuth'
+import { resolveWeeklyReflection } from '../../lib/accomplishmentDocument'
 import {
   formatDecimalHours,
   formatDurationMinutes,
   formatWallClockTime,
 } from '../../lib/attendanceUtils'
 import { getDeadlineBadge } from '../../lib/internDashboardUtils'
+import { resolveHostOrganizationName } from '../../lib/schemaCompat'
 import {
   getAttachmentDisplayName,
   splitFilenameForDisplay,
@@ -27,6 +29,7 @@ import { extractIsoDatePart, formatBreakText } from '../../lib/useSupervisorData
 import {
   formatCalendarDate,
   formatWeekRange,
+  formatWeekdayCalendarDate,
   getTodayIsoDate,
 } from '../../lib/weekUtils'
 
@@ -463,94 +466,121 @@ function ReviewDialogBody({
               </dd>
             </div>
             <div>
-              <dt className="text-ink-muted">Host Company</dt>
-              <dd className="mt-0.5 text-ink">{intern?.company_name || '—'}</dd>
+              <dt className="text-ink-muted">Host Organization / Institution</dt>
+              <dd className="mt-0.5 text-ink">
+                {resolveHostOrganizationName(intern) || '—'}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-ink-muted">Office / Department</dt>
+              <dd className="mt-0.5 text-ink">
+                {intern?.department_office || '—'}
+              </dd>
             </div>
             <div>
               <dt className="text-ink-muted">Program / School</dt>
               <dd className="mt-0.5 text-ink">{internProgram}</dd>
             </div>
+            {intern?.year_level ? (
+              <div>
+                <dt className="text-ink-muted">Year Level</dt>
+                <dd className="mt-0.5 text-ink">{intern.year_level}</dd>
+              </div>
+            ) : null}
           </dl>
         </section>
 
         {item.type === 'accomplishments' ? (
-          <>
-            <section
-              aria-labelledby={`${headingId}-report`}
-              className="space-y-4 rounded-[6px] border border-rule bg-surface p-4 sm:p-5"
-            >
-              <div className="border-b border-rule pb-3.5">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <h3
-                    id={`${headingId}-report`}
-                    className="text-sm font-semibold text-ink break-words"
-                  >
-                    {item.row.title || 'Weekly Accomplishment Report'}
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={onOpenDocument}
-                    className="inline-flex min-h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-[5px] border border-rule bg-surface px-2.5 text-xs font-medium text-ink hover:bg-surface-subtle"
-                  >
-                    View document
-                  </button>
+          (() => {
+            const weekReflection = resolveWeeklyReflection(
+              item.weeklyReflection,
+              item.weekRows ?? [item.row],
+            )
+            return (
+              <section
+                aria-labelledby={`${headingId}-report`}
+                className="space-y-4 rounded-[6px] border border-rule bg-surface p-4 sm:p-5"
+              >
+                <div className="border-b border-rule pb-3.5">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <h3
+                      id={`${headingId}-report`}
+                      className="text-sm font-semibold text-ink break-words"
+                    >
+                      {item.row.entry_date
+                        ? formatWeekdayCalendarDate(item.row.entry_date)
+                        : item.row.title || 'Weekly Accomplishment Report'}
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={onOpenDocument}
+                      className="inline-flex min-h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-[5px] border border-rule bg-surface px-2.5 text-xs font-medium text-ink hover:bg-surface-subtle"
+                    >
+                      View weekly document
+                    </button>
+                  </div>
+                  <dl className="mt-3 grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
+                    <div>
+                      <dt className="text-ink-muted">Reporting Period</dt>
+                      <dd className="mt-0.5 font-medium tabular-nums text-ink">
+                        {formatWeekRange(item.row.week_of, 5)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-ink-muted">Submission Date</dt>
+                      <dd className="mt-0.5 font-medium tabular-nums text-ink">
+                        {formatTimestampDisplay(submissionTimestamp)}
+                      </dd>
+                    </div>
+                  </dl>
                 </div>
-                <dl className="mt-3 grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
-                  <div>
-                    <dt className="text-ink-muted">Reporting Period</dt>
-                    <dd className="mt-0.5 font-medium tabular-nums text-ink">
-                      Week of {formatWeekRange(item.row.week_of)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-ink-muted">Submission Date</dt>
-                    <dd className="mt-0.5 font-medium tabular-nums text-ink">
-                      {formatTimestampDisplay(submissionTimestamp)}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
 
-              <div className="space-y-4">
-                <DrawerNarrativeField
-                  label="Activities Performed"
-                  value={item.row.description}
-                  emptyText="No activities recorded."
-                />
-                <DrawerNarrativeField
-                  label="Skills Acquired"
-                  value={item.row.skills_acquired}
-                  emptyText="No skills recorded."
-                />
-                <DrawerNarrativeField
-                  label="Challenges Encountered"
-                  value={item.row.challenges_encountered}
-                  emptyText="No challenges recorded."
-                />
-                <DrawerNarrativeField
-                  label="Lessons Learned"
-                  value={item.row.lessons_learned}
-                  emptyText="No lessons recorded."
-                />
-              </div>
-
-              <div className="border-t border-rule pt-3.5">
-                <h4 className="text-xs font-semibold uppercase tracking-[0.04em] text-ink-muted">
-                  Uploaded Attachments
-                </h4>
-                {item.row.attachment_url ? (
-                  <AttachmentControl
-                    objectPath={item.row.attachment_url}
-                    onError={onAttachmentError}
+                <div className="space-y-4">
+                  <DrawerNarrativeField
+                    label="Activities Performed"
+                    value={item.row.description || item.row.title}
+                    emptyText="No activities recorded."
                   />
-                ) : (
-                  <p className="mt-1.5 text-xs italic text-ink-muted">
-                    No attachment uploaded.
-                  </p>
-                )}
-              </div>
-            </section>
-          </>
+                  <DrawerNarrativeField
+                    label="Output / Result"
+                    value={item.row.output_result}
+                    emptyText="Not provided"
+                  />
+                  <DrawerNarrativeField
+                    label="Weekly Skills Acquired"
+                    value={weekReflection.skills_acquired}
+                    emptyText="No skills recorded."
+                  />
+                  <DrawerNarrativeField
+                    label="Weekly Challenges Encountered"
+                    value={weekReflection.challenges_encountered}
+                    emptyText="No challenges recorded."
+                  />
+                  <DrawerNarrativeField
+                    label="Weekly Lessons Learned / Next Steps"
+                    value={weekReflection.lessons_learned}
+                    emptyText="No lessons recorded."
+                  />
+                </div>
+
+                <div className="border-t border-rule pt-3.5">
+                  <h4 className="text-xs font-semibold uppercase tracking-[0.04em] text-ink-muted">
+                    Uploaded Attachments
+                  </h4>
+                  {item.row.attachment_url ? (
+                    <AttachmentControl
+                      objectPath={item.row.attachment_url}
+                      onError={onAttachmentError}
+                    />
+                  ) : (
+                    <p className="mt-1.5 text-xs italic text-ink-muted">
+                      No attachment uploaded.
+                    </p>
+                  )}
+                </div>
+              </section>
+            )
+          })()
         ) : item.type === 'attendance' ? (
           <section
             aria-labelledby={`${headingId}-attendance`}
@@ -915,13 +945,30 @@ export function ReviewDialog({
       <AccomplishmentDocumentDialog
         open={isDocumentOpen}
         onClose={() => setDocumentKey('')}
+        rows={isDocumentOpen ? (item.weekRows ?? [item.row]) : null}
         row={isDocumentOpen ? item.row : null}
+        weekOf={isDocumentOpen ? item.row?.week_of : ''}
+        weeklyReflection={isDocumentOpen ? item.weeklyReflection : null}
         internName={intern?.full_name || item?.internName}
         studentIdNo={intern?.student_id_no ?? item?.studentIdNo}
         course={intern?.course ?? item?.course}
+        yearLevel={intern?.year_level ?? item?.yearLevel}
         schoolName={intern?.school_name ?? item?.schoolName}
+        internshipType={intern?.internship_type ?? item?.internshipType}
+        hostOrganization={
+          resolveHostOrganizationName(intern) || item?.hostOrganization
+        }
         companyName={intern?.company_name ?? item?.companyName}
+        departmentOffice={intern?.department_office ?? item?.departmentOffice}
         supervisorName={resolvedSupervisorName}
+        reviewerName={resolvedSupervisorName}
+        requiredHours={intern?.required_hours ?? item?.requiredHours}
+        internshipStartDate={
+          intern?.internship_start_date ?? item?.internshipStartDate
+        }
+        internshipEndDate={
+          intern?.internship_end_date ?? item?.internshipEndDate
+        }
       />
     </>
   )

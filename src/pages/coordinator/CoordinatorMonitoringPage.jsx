@@ -417,7 +417,7 @@ export function CoordinatorMonitoringPage() {
                   <thead>
                     <tr>
                       <th scope="col">Intern</th>
-                      <th scope="col">Company</th>
+                      <th scope="col">Host Organization / Institution</th>
                       <th scope="col">Supervisor</th>
                       <th scope="col" className="w-48">
                         Approved Hours &amp; Progress
@@ -444,10 +444,19 @@ export function CoordinatorMonitoringPage() {
                           </div>
                         </th>
                         <td
-                          data-label="Company"
+                          data-label="Host Organization / Institution"
                           className="text-xs text-ink-muted"
                         >
-                          {intern.company_name || '—'}
+                          <div className="min-w-0">
+                            <p className="text-ink">
+                              {intern.company_name || '—'}
+                            </p>
+                            {intern.department_office ? (
+                              <p className="mt-0.5 text-[11px] text-ink-muted">
+                                {intern.department_office}
+                              </p>
+                            ) : null}
+                          </div>
                         </td>
                         <td
                           data-label="Supervisor"

@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { runWithSchemaFallback } from '../lib/schemaCompat'
 import { supabase } from '../lib/supabaseClient'
 import { AuthContext } from './authContextValue'
+
+const PROFILE_SELECT_LATEST =
+  'id, full_name, role, supervisor_id, student_id_no, company_name, department_office, internship_type, year_level, required_hours, internship_start_date, internship_end_date, school_name, course, is_active, deactivated_reason'
+
+const PROFILE_SELECT_LEGACY =
+  'id, full_name, role, supervisor_id, student_id_no, company_name, required_hours, internship_start_date, school_name, course, is_active, deactivated_reason'
 
 const EMPTY_PROFILE_STATE = {
   userId: null,
@@ -43,21 +50,27 @@ export function AuthProvider({ children }) {
     let cancelled = false
     const targetUserId = user.id
 
-    supabase
-      .from('profiles')
-      .select(
-        'id, full_name, role, supervisor_id, student_id_no, company_name, required_hours, internship_start_date, school_name, course, is_active, deactivated_reason',
-      )
-      .eq('id', targetUserId)
-      .single()
-      .then(({ data, error }) => {
-        if (cancelled) return
-        setProfileState({
-          userId: targetUserId,
-          data: error ? null : data,
-          error: error ?? null,
-        })
+    runWithSchemaFallback(
+      () =>
+        supabase
+          .from('profiles')
+          .select(PROFILE_SELECT_LATEST)
+          .eq('id', targetUserId)
+          .single(),
+      () =>
+        supabase
+          .from('profiles')
+          .select(PROFILE_SELECT_LEGACY)
+          .eq('id', targetUserId)
+          .single(),
+    ).then(({ data, error }) => {
+      if (cancelled) return
+      setProfileState({
+        userId: targetUserId,
+        data: error ? null : data,
+        error: error ?? null,
       })
+    })
 
     return () => {
       cancelled = true

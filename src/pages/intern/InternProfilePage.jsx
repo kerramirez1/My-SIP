@@ -11,6 +11,12 @@ import {
   formatDurationMinutes,
 } from '../../lib/attendanceUtils'
 import { getRequiredInternshipHours } from '../../lib/internDashboardUtils'
+import {
+  formatInternshipPeriod,
+  formatInternshipTypeLabel,
+  resolveHostOrganizationName,
+  runWithSchemaFallback,
+} from '../../lib/schemaCompat'
 import { supabase } from '../../lib/supabaseClient'
 import { useDocumentTitle } from '../../lib/useDocumentTitle'
 import { useFormValidationSync } from '../../lib/useFormValidationSync'
@@ -181,11 +187,20 @@ export function InternProfilePage() {
     let active = true
 
     const supervisorPromise = supervisorId
-      ? supabase
-          .from('profiles')
-          .select('id, full_name, company_name')
-          .eq('id', supervisorId)
-          .maybeSingle()
+      ? runWithSchemaFallback(
+          () =>
+            supabase
+              .from('profiles')
+              .select('id, full_name, company_name, department_office')
+              .eq('id', supervisorId)
+              .maybeSingle(),
+          () =>
+            supabase
+              .from('profiles')
+              .select('id, full_name, company_name')
+              .eq('id', supervisorId)
+              .maybeSingle(),
+        )
       : Promise.resolve({ data: null, error: null })
 
     Promise.all([
@@ -380,17 +395,32 @@ export function InternProfilePage() {
     { label: 'Full name', value: profile?.full_name?.trim() || '—' },
     { label: 'Email address', value: user?.email || '—' },
     { label: 'Role', value: 'Intern' },
-    { label: 'Student ID No.', value: profile?.student_id_no?.trim() || '—' },
-    { label: 'School name', value: profile?.school_name?.trim() || '—' },
-    { label: 'Course', value: profile?.course?.trim() || '—' },
-    { label: 'Company name', value: profile?.company_name?.trim() || '—' },
+    { label: 'Student ID', value: profile?.student_id_no?.trim() || '—' },
+    { label: 'School', value: profile?.school_name?.trim() || '—' },
+    { label: 'Course / Program', value: profile?.course?.trim() || '—' },
+    { label: 'Year level', value: profile?.year_level?.trim() || '—' },
     {
-      label: 'Internship start date',
-      value: profile?.internship_start_date
-        ? formatCalendarDate(profile.internship_start_date)
-        : '—',
+      label: 'Internship type',
+      value: formatInternshipTypeLabel(profile?.internship_type) || '—',
     },
-    { label: 'Required hours', value: `${requiredHours} hrs` },
+    {
+      label: 'Host Organization / Institution',
+      value: resolveHostOrganizationName(profile) || '—',
+    },
+    {
+      label: 'Office / Department',
+      value: profile?.department_office?.trim() || '—',
+    },
+    {
+      label: 'Internship period',
+      value:
+        formatInternshipPeriod(
+          profile?.internship_start_date,
+          profile?.internship_end_date,
+          formatCalendarDate,
+        ) || '—',
+    },
+    { label: 'Required internship hours', value: `${requiredHours} hrs` },
   ]
 
   return (
@@ -501,12 +531,22 @@ export function InternProfilePage() {
                   </div>
                   <div>
                     <dt className="text-xs font-medium text-ink-muted">
-                      Company
+                      Host Organization / Institution
                     </dt>
                     <dd className="mt-0.5 text-sm text-ink-muted">
                       {supervisorRecord?.company_name?.trim() || '—'}
                     </dd>
                   </div>
+                  {supervisorRecord?.department_office?.trim() ? (
+                    <div>
+                      <dt className="text-xs font-medium text-ink-muted">
+                        Office / Department
+                      </dt>
+                      <dd className="mt-0.5 text-sm text-ink-muted">
+                        {supervisorRecord.department_office.trim()}
+                      </dd>
+                    </div>
+                  ) : null}
                 </dl>
               ) : (
                 <p className="text-sm leading-[1.55] text-ink-muted">

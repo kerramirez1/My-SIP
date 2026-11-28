@@ -4,6 +4,10 @@ import {
   formatDecimalHours,
   formatDurationMinutes,
 } from '../../lib/attendanceUtils'
+import {
+  formatInternshipTypeLabel,
+  resolveHostOrganizationName,
+} from '../../lib/schemaCompat'
 import { useDocumentTitle } from '../../lib/useDocumentTitle'
 import { useSupervisorData } from '../../lib/useSupervisorData'
 
@@ -94,8 +98,8 @@ export function SupervisorInternsPage() {
                     <th scope="col" className="w-36">
                       Student ID
                     </th>
-                    <th scope="col" className="w-48">
-                      Company
+                    <th scope="col" className="w-56">
+                      Host Organization / Institution
                     </th>
                     <th scope="col" className="w-36">
                       Approved hours
@@ -110,9 +114,21 @@ export function SupervisorInternsPage() {
                 </thead>
                 <tbody>
                   {internProgressRows.map((intern) => {
-                    const academicMeta = [intern.course, intern.school_name]
+                    const academicMeta = [
+                      [intern.course, intern.year_level]
+                        .filter(Boolean)
+                        .join(' – '),
+                      intern.school_name,
+                    ]
                       .filter(Boolean)
-                      .join(' — ')
+                      .join(' · ')
+                    const hostOrg = resolveHostOrganizationName(intern)
+                    const placementSubline = [
+                      intern.department_office?.trim(),
+                      formatInternshipTypeLabel(intern.internship_type),
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
 
                     return (
                       <tr key={intern.id}>
@@ -135,10 +151,17 @@ export function SupervisorInternsPage() {
                           {intern.student_id_no || '—'}
                         </td>
                         <td
-                          data-label="Company"
+                          data-label="Host Organization / Institution"
                           className="text-sm text-ink-muted"
                         >
-                          {intern.company_name || '—'}
+                          <div className="min-w-0">
+                            <p className="text-ink">{hostOrg || '—'}</p>
+                            {placementSubline ? (
+                              <p className="mt-0.5 text-xs text-ink-muted">
+                                {placementSubline}
+                              </p>
+                            ) : null}
+                          </div>
                         </td>
                         <td
                           data-label="Approved hours"

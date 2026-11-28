@@ -13,6 +13,7 @@ import {
   buildInternDashboardMetrics,
   getRequiredInternshipHours,
 } from '../../lib/internDashboardUtils'
+import { resolveHostOrganizationName } from '../../lib/schemaCompat'
 import { hasReviewerFeedbackStatus } from '../../lib/submissionHelpers'
 import { supabase } from '../../lib/supabaseClient'
 import { useDocumentTitle } from '../../lib/useDocumentTitle'
@@ -156,7 +157,8 @@ export function InternDashboard() {
 
   const displayName = profile?.full_name?.trim() || 'Intern'
   const profileDetails = [
-    profile?.company_name?.trim(),
+    resolveHostOrganizationName(profile),
+    profile?.department_office?.trim(),
     profile?.student_id_no?.trim()
       ? `Student ID ${profile.student_id_no.trim()}`
       : '',

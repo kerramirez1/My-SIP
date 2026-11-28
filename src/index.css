@@ -1796,139 +1796,366 @@ progress.loading-spinner:indeterminate {
 
 /* Formal Weekly Accomplishment Document preview (paper artifact, white/black in both themes) */
 dialog.form-dialog:has(.accomplishment-document-dialog-body) {
-  inline-size: min(56rem, calc(100dvw - 2rem));
+  inline-size: min(58rem, calc(100dvw - 2rem));
 }
 
 .accomplishment-document-sheet {
   color-scheme: light;
-  max-inline-size: 48rem;
+  max-inline-size: 52rem;
   margin-inline: auto;
-  padding: 1.75rem 1.5rem;
+  padding: 1.5rem 1.25rem;
   background-color: #ffffff;
-  color: #000000;
-  border: 1px solid #d1d5db;
-  box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
+  color: #111827;
+  border: 1px solid #cbd5e1;
   font-family: Arial, Helvetica, sans-serif;
-  font-size: 12pt;
-  line-height: 2;
+  font-size: 10pt;
+  line-height: 1.5;
 }
 
 @media (min-width: 40rem) {
   .accomplishment-document-sheet {
-    padding: 3rem;
+    padding: 2.25rem 2.5rem;
   }
 }
 
 .accomplishment-document-header {
+  position: relative;
   text-align: center;
-  margin-block-end: 1.5rem;
+  padding-block-end: 0.55rem;
+  border-block-end: 2px solid #1e3a5f;
 }
 
-.accomplishment-document-header h2 {
+.accomplishment-document-header::after {
+  content: "";
+  display: block;
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: -5px;
+  border-block-end: 1px solid #1e3a5f;
+}
+
+.accomplishment-document-univ {
   margin: 0;
-  font-size: 14pt;
+  font-size: 13.5pt;
   font-weight: 700;
-  line-height: 1.4;
-  color: #000000;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+  color: #0f172a;
 }
 
-.accomplishment-document-title {
-  margin: 0.25rem 0 0;
-  font-size: 12pt;
-  font-weight: 700;
-  line-height: 1.5;
-  color: #000000;
+.accomplishment-document-campus {
+  margin: 0.1rem 0 0;
+  font-size: 10pt;
+  line-height: 1.3;
+  color: #1f2937;
 }
 
-.accomplishment-document-week {
-  margin: 0.2rem 0 0;
+.accomplishment-document-program {
+  margin: 0.12rem 0 0;
+  font-size: 10pt;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #111827;
+}
+
+.accomplishment-document-sip {
+  margin: 0.1rem 0 0;
+  font-size: 9pt;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.3;
+  color: #1e3a5f;
+}
+
+.accomplishment-document-title-band {
+  margin-block-start: 0.7rem;
+  padding: 0.55rem 0.85rem;
+  background-color: #1e3a5f;
+  color: #ffffff;
+  text-align: center;
+}
+
+.accomplishment-document-title-band h2 {
+  margin: 0;
   font-size: 12pt;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.25;
+  color: #ffffff;
+}
+
+.accomplishment-document-period {
+  margin: 0.18rem 0 0;
+  font-size: 9.25pt;
   font-weight: 400;
-  line-height: 1.5;
-  color: #000000;
+  line-height: 1.3;
+  color: #e2e8f0;
 }
 
-.accomplishment-document-info {
-  margin-block: 1.5rem;
-  line-height: 1.5;
+.accomplishment-document-meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.25rem 0.85rem;
+  margin-block-start: 0.45rem;
+  padding: 0.35rem 0.6rem;
+  background-color: #f8fafc;
+  border: 1px solid #cbd5e1;
+  font-size: 8.25pt;
+  line-height: 1.35;
+  color: #334155;
 }
 
-.accomplishment-document-info p {
-  margin: 0.15rem 0;
-  line-height: 1.5;
-  color: #000000;
+.accomplishment-document-meta-strip strong {
+  color: #0f172a;
+}
+
+.accomplishment-document-block {
+  margin-block-start: 0.9rem;
+}
+
+.accomplishment-document-block-title {
+  margin: 0 0 0.4rem;
+  padding: 0.25rem 0.55rem;
+  background-color: #f1f5f9;
+  border-inline-start: 3px solid #1e3a5f;
+  font-size: 9pt;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #0f172a;
+}
+
+.accomplishment-document-table-scroll {
+  overflow-x: auto;
+}
+
+.accomplishment-document-info-table,
+.accomplishment-document-daily-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: 9pt;
+  line-height: 1.42;
+}
+
+.accomplishment-document-info-table th,
+.accomplishment-document-info-table td,
+.accomplishment-document-daily-table th,
+.accomplishment-document-daily-table td {
+  border: 1px solid #cbd5e1;
+  padding: 0.35rem 0.5rem;
+  text-align: start;
+  vertical-align: top;
+}
+
+.accomplishment-document-info-table th {
+  inline-size: 19%;
+  background-color: #f8fafc;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.accomplishment-document-info-table td {
+  inline-size: 31%;
+  color: #0f172a;
   overflow-wrap: break-word;
 }
 
-.accomplishment-document-section {
-  margin-block-start: 1.25rem;
-}
-
-.accomplishment-document-section h3 {
-  margin: 0 0 0.25rem;
-  font-size: 12pt;
+.accomplishment-document-daily-table th {
+  background-color: #f1f5f9;
+  font-size: 8.75pt;
   font-weight: 700;
-  line-height: 1.5;
-  color: #000000;
+  color: #0f172a;
 }
 
-.accomplishment-document-section p {
-  margin: 0;
-  font-size: 12pt;
-  line-height: 2;
-  text-align: justify;
+.accomplishment-document-daily-table .col-date {
+  inline-size: 22%;
+}
+
+.accomplishment-document-daily-table .col-activity {
+  inline-size: 46%;
+}
+
+.accomplishment-document-daily-table .col-output {
+  inline-size: 32%;
+}
+
+.accomplishment-document-date-primary {
+  display: block;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.accomplishment-document-date-sub {
+  display: block;
+  margin-block-start: 0.1rem;
+  font-size: 7.75pt;
+  font-style: italic;
+  color: #64748b;
+}
+
+.accomplishment-document-activity-heading {
+  font-weight: 700;
+  color: #0f172a;
+  margin-block-end: 0.15rem;
+}
+
+.accomplishment-document-pre {
   white-space: pre-wrap;
   overflow-wrap: break-word;
-  color: #000000;
+  color: #111827;
 }
 
-.accomplishment-document-attachment {
-  margin: 1.5rem 0 0;
-  line-height: 1.6;
-  color: #000000;
+.accomplishment-document-pre.is-empty {
+  font-style: italic;
+  color: #64748b;
+}
+
+.accomplishment-document-empty-cell {
+  text-align: center;
+  font-style: italic;
+  color: #64748b;
+  padding: 0.75rem;
+}
+
+.accomplishment-document-attachments-strip {
+  margin-block-start: 0.45rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid #cbd5e1;
+  background-color: #f8fafc;
+  font-size: 8.5pt;
+  color: #334155;
   overflow-wrap: break-word;
 }
 
-.accomplishment-document-signatures {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 2rem;
-  margin-block-start: 3.5rem;
-  line-height: 1.5;
-  color: #000000;
+.accomplishment-document-attachments-strip strong {
+  color: #0f172a;
 }
 
-@media (min-width: 34rem) {
-  .accomplishment-document-signatures {
+.accomplishment-document-reflection-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.65rem;
+}
+
+@media (min-width: 36rem) {
+  .accomplishment-document-reflection-grid {
     grid-template-columns: 1fr 1fr;
-    gap: 3rem;
   }
 }
 
-.accomplishment-document-signature-col {
+.accomplishment-document-reflection-box {
+  border: 1px solid #cbd5e1;
+  padding: 0.55rem 0.65rem;
   min-inline-size: 0;
 }
 
-.accomplishment-document-signature-label {
-  margin: 0;
-  font-size: 12pt;
-  font-weight: 400;
-  line-height: 1.5;
-  color: #000000;
+.accomplishment-document-reflection-box.is-full {
+  margin-block-start: 0.65rem;
 }
 
-.accomplishment-document-signature-line {
-  block-size: 2.75rem;
-  border-block-end: 1px solid #000000;
-}
-
-.accomplishment-document-signature-name {
-  margin: 0.35rem 0 0;
-  font-size: 12pt;
+.accomplishment-document-reflection-box h4 {
+  margin: 0 0 0.3rem;
+  padding-block-end: 0.2rem;
+  border-block-end: 1px solid #e2e8f0;
+  font-size: 8.75pt;
   font-weight: 700;
-  line-height: 1.4;
-  color: #000000;
+  color: #0f172a;
+}
+
+.accomplishment-document-reflection-box p {
+  margin: 0;
+  font-size: 9.25pt;
+  line-height: 1.5;
+  white-space: pre-wrap;
   overflow-wrap: break-word;
+  color: #111827;
+}
+
+.accomplishment-document-reflection-box p.is-empty {
+  font-style: italic;
+  color: #64748b;
+}
+
+.accomplishment-document-verify-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+@media (min-width: 36rem) {
+  .accomplishment-document-verify-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.accomplishment-document-verify-col {
+  min-inline-size: 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #cbd5e1;
+}
+
+.accomplishment-document-verify-heading {
+  margin: 0 0 0.35rem;
+  font-size: 8pt;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #475569;
+}
+
+.accomplishment-document-verify-name {
+  margin: 0;
+  font-size: 10.25pt;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #0f172a;
+  overflow-wrap: break-word;
+}
+
+.accomplishment-document-verify-role {
+  margin: 0.08rem 0 0;
+  font-size: 8.75pt;
+  color: #475569;
+  line-height: 1.35;
+}
+
+.accomplishment-document-verify-detail {
+  margin: 0.28rem 0 0;
+  font-size: 8.75pt;
+  color: #1e293b;
+  line-height: 1.35;
+}
+
+.accomplishment-document-verify-status {
+  margin: 0.25rem 0 0;
+  font-size: 8.75pt;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.accomplishment-document-verify-note {
+  margin: 0.2rem 0 0;
+  font-size: 8.25pt;
+  line-height: 1.4;
+  color: #475569;
+}
+
+.accomplishment-document-footer {
+  margin-block-start: 0.9rem;
+  padding-block-start: 0.45rem;
+  border-block-start: 1px solid #cbd5e1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 0.85rem;
+  font-size: 8pt;
+  line-height: 1.35;
+  color: #475569;
 }
 
 @media (prefers-reduced-motion: reduce) {

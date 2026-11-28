@@ -6,6 +6,12 @@ import { SubmissionDialog } from '../../components/SubmissionDialog'
 import { useAuth } from '../../context/useAuth'
 import { extractEdgeFunctionError } from '../../lib/edgeFunctionUtils'
 import { DEFAULT_REQUIRED_INTERNSHIP_HOURS } from '../../lib/internDashboardUtils'
+import {
+  formatInternshipPeriod,
+  formatInternshipTypeLabel,
+  resolveHostOrganizationName,
+  runWithSchemaFallback,
+} from '../../lib/schemaCompat'
 import { supabase } from '../../lib/supabaseClient'
 import { useDocumentTitle } from '../../lib/useDocumentTitle'
 import { useFormValidationSync } from '../../lib/useFormValidationSync'
@@ -87,8 +93,12 @@ function CreateAccountForm({ supervisors, supervisorById, onClose, onCreated }) 
   const [studentIdNo, setStudentIdNo] = useState('')
   const [schoolName, setSchoolName] = useState('')
   const [course, setCourse] = useState('')
+  const [yearLevel, setYearLevel] = useState('')
+  const [internshipType, setInternshipType] = useState('off_campus')
   const [companyName, setCompanyName] = useState('')
+  const [departmentOffice, setDepartmentOffice] = useState('')
   const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
   const [requiredHours, setRequiredHours] = useState(
     String(DEFAULT_REQUIRED_INTERNSHIP_HOURS),
   )
@@ -184,10 +194,21 @@ function CreateAccountForm({ supervisors, supervisorById, onClose, onCreated }) 
         }
         parsedRequiredHours = numericHours
       }
+
+      if (startDate.trim() && endDate.trim() && endDate.trim() < startDate.trim()) {
+        setFormError(
+          'Internship end date must be on or after the internship start date.',
+        )
+        return
+      }
     }
 
     setSaving(true)
     setFormError('')
+
+    const resolvedHostOrg =
+      companyName.trim() ||
+      (isIntern && internshipType === 'on_campus' ? schoolName.trim() : '')
 
     const body = isIntern
       ? {
@@ -199,8 +220,12 @@ function CreateAccountForm({ supervisors, supervisorById, onClose, onCreated }) 
           student_id_no: studentIdNo.trim() || null,
           school_name: schoolName.trim() || null,
           course: course.trim() || null,
-          company_name: companyName.trim() || null,
+          year_level: yearLevel.trim() || null,
+          internship_type: internshipType || null,
+          company_name: resolvedHostOrg || null,
+          department_office: departmentOffice.trim() || null,
           internship_start_date: startDate.trim() || null,
+          internship_end_date: endDate.trim() || null,
           required_hours: parsedRequiredHours,
         }
       : {
@@ -209,6 +234,7 @@ function CreateAccountForm({ supervisors, supervisorById, onClose, onCreated }) 
           email: trimmedEmail,
           password,
           company_name: companyName.trim() || null,
+          department_office: departmentOffice.trim() || null,
         }
 
     const { data, error } = await supabase.functions.invoke('create-account', {
@@ -349,158 +375,278 @@ function CreateAccountForm({ supervisors, supervisorById, onClose, onCreated }) 
 
         {isIntern ? (
           <>
-            <div className="field-group flex flex-col gap-1.5">
-              <label
-                htmlFor="create-account-supervisor"
-                className="text-sm font-medium leading-[1.4] text-ink"
-              >
-                Assigned supervisor
-              </label>
-              {missingSupervisorsForIntern ? (
-                <span
-                  id="create-account-supervisor-hint"
-                  className="text-xs leading-[1.4] text-error"
-                >
-                  Create an active supervisor account first.
-                </span>
-              ) : null}
-              <select
-                ref={supervisorRef}
-                id="create-account-supervisor"
-                name="supervisor_id"
-                required
-                disabled={missingSupervisorsForIntern}
-                aria-invalid="false"
-                aria-describedby={
-                  missingSupervisorsForIntern
-                    ? 'create-account-supervisor-hint'
-                    : undefined
-                }
-                value={selectedSupervisorId}
-                onChange={(event) => {
-                  setSupervisorId(event.target.value)
-                  setFieldInvalidFallback(supervisorRef.current, false)
-                  if (formError) setFormError('')
-                }}
-                className="form-control min-h-11 w-full rounded-[5px] border border-input-border bg-surface px-3.5 py-2.5 text-[max(1rem,1em)] text-ink transition-colors hover:border-ink disabled:cursor-not-allowed disabled:bg-canvas disabled:opacity-70 sm:text-sm"
-              >
-                {missingSupervisorsForIntern ? (
-                  <option value="">No active supervisors available</option>
-                ) : (
-                  supervisors.map((sup) => (
-                    <option key={sup.id} value={sup.id}>
-                      {sup.full_name}
-                      {sup.company_name ? ` — ${sup.company_name}` : ''}
-                    </option>
-                  ))
-                )}
-              </select>
-            </div>
+            <fieldset className="space-y-4 border-t border-rule pt-4">
+              <legend className="text-xs font-semibold uppercase tracking-[0.04em] text-ink-muted">
+                Intern Information
+              </legend>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FormField
-                id="create-account-student-id"
-                name="student_id_no"
-                label="Student ID No."
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="e.g. 2023-00142"
-                value={studentIdNo}
-                onChange={(event) => {
-                  setStudentIdNo(event.target.value)
-                  if (formError) setFormError('')
-                }}
-              />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <FormField
+                  id="create-account-student-id"
+                  name="student_id_no"
+                  label="Student ID"
+                  type="text"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="e.g. 2023-00142"
+                  value={studentIdNo}
+                  onChange={(event) => {
+                    setStudentIdNo(event.target.value)
+                    if (formError) setFormError('')
+                  }}
+                />
 
-              <FormField
-                inputRef={requiredHoursRef}
-                id="create-account-required-hours"
-                name="required_hours"
-                label="Required hours"
-                type="number"
-                inputMode="numeric"
-                min={1}
-                step={1}
-                required
-                validationMessage="Enter a positive whole number of hours."
-                value={requiredHours}
-                onChange={(event) => {
-                  setRequiredHours(event.target.value)
-                  setFieldInvalidFallback(requiredHoursRef.current, false)
-                  if (formError) setFormError('')
-                }}
-              />
-            </div>
+                <FormField
+                  id="create-account-year-level"
+                  name="year_level"
+                  label="Year level"
+                  type="text"
+                  list="create-year-level-options"
+                  placeholder="e.g. 4th Year"
+                  value={yearLevel}
+                  onChange={(event) => {
+                    setYearLevel(event.target.value)
+                    if (formError) setFormError('')
+                  }}
+                />
+                <datalist id="create-year-level-options">
+                  <option value="3rd Year" />
+                  <option value="4th Year" />
+                  <option value="5th Year" />
+                </datalist>
+              </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FormField
-                id="create-account-school"
-                name="school_name"
-                label="School name"
-                type="text"
-                placeholder="e.g. State University"
-                value={schoolName}
-                onChange={(event) => {
-                  setSchoolName(event.target.value)
-                  if (formError) setFormError('')
-                }}
-              />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <FormField
+                  id="create-account-school"
+                  name="school_name"
+                  label="School"
+                  type="text"
+                  placeholder="e.g. Romblon State University – Cajidiocan Campus"
+                  value={schoolName}
+                  onChange={(event) => {
+                    setSchoolName(event.target.value)
+                    if (formError) setFormError('')
+                  }}
+                />
 
-              <FormField
-                id="create-account-course"
-                name="course"
-                label="Course"
-                type="text"
-                placeholder="e.g. BS Information Technology"
-                value={course}
-                onChange={(event) => {
-                  setCourse(event.target.value)
-                  if (formError) setFormError('')
-                }}
-              />
-            </div>
+                <FormField
+                  id="create-account-course"
+                  name="course"
+                  label="Course / Program"
+                  type="text"
+                  placeholder="e.g. BS Information Technology"
+                  value={course}
+                  onChange={(event) => {
+                    setCourse(event.target.value)
+                    if (formError) setFormError('')
+                  }}
+                />
+              </div>
+            </fieldset>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FormField
-                id="create-account-company"
-                name="company_name"
-                label="Company name"
-                type="text"
-                placeholder="e.g. Acme Tech Corp"
-                value={companyName}
-                onChange={(event) => {
-                  setCompanyName(event.target.value)
-                  if (formError) setFormError('')
-                }}
-              />
+            <fieldset className="space-y-4 border-t border-rule pt-4">
+              <legend className="text-xs font-semibold uppercase tracking-[0.04em] text-ink-muted">
+                Internship Placement Information
+              </legend>
 
-              <FormField
-                id="create-account-start-date"
-                name="internship_start_date"
-                label="Internship start date"
-                type="date"
-                value={startDate}
-                onChange={(event) => {
-                  setStartDate(event.target.value)
-                  if (formError) setFormError('')
-                }}
-              />
-            </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="field-group flex flex-col gap-1.5">
+                  <label
+                    htmlFor="create-account-internship-type"
+                    className="text-sm font-medium leading-[1.4] text-ink"
+                  >
+                    Internship type
+                  </label>
+                  <select
+                    id="create-account-internship-type"
+                    name="internship_type"
+                    value={internshipType}
+                    onChange={(event) => {
+                      const nextType = event.target.value
+                      setInternshipType(nextType)
+                      if (
+                        nextType === 'on_campus' &&
+                        !companyName.trim() &&
+                        schoolName.trim()
+                      ) {
+                        setCompanyName(schoolName.trim())
+                      }
+                      if (formError) setFormError('')
+                    }}
+                    className="form-control min-h-11 w-full rounded-[5px] border border-input-border bg-surface px-3.5 py-2.5 text-[max(1rem,1em)] text-ink transition-colors hover:border-ink sm:text-sm"
+                  >
+                    <option value="off_campus">Off-campus</option>
+                    <option value="on_campus">On-campus</option>
+                  </select>
+                </div>
+
+                <div className="field-group flex flex-col gap-1.5">
+                  <label
+                    htmlFor="create-account-supervisor"
+                    className="text-sm font-medium leading-[1.4] text-ink"
+                  >
+                    Assigned supervisor
+                  </label>
+                  {missingSupervisorsForIntern ? (
+                    <span
+                      id="create-account-supervisor-hint"
+                      className="text-xs leading-[1.4] text-error"
+                    >
+                      Create an active supervisor account first.
+                    </span>
+                  ) : null}
+                  <select
+                    ref={supervisorRef}
+                    id="create-account-supervisor"
+                    name="supervisor_id"
+                    required
+                    disabled={missingSupervisorsForIntern}
+                    aria-invalid="false"
+                    aria-describedby={
+                      missingSupervisorsForIntern
+                        ? 'create-account-supervisor-hint'
+                        : undefined
+                    }
+                    value={selectedSupervisorId}
+                    onChange={(event) => {
+                      setSupervisorId(event.target.value)
+                      setFieldInvalidFallback(supervisorRef.current, false)
+                      if (formError) setFormError('')
+                    }}
+                    className="form-control min-h-11 w-full rounded-[5px] border border-input-border bg-surface px-3.5 py-2.5 text-[max(1rem,1em)] text-ink transition-colors hover:border-ink disabled:cursor-not-allowed disabled:bg-canvas disabled:opacity-70 sm:text-sm"
+                  >
+                    {missingSupervisorsForIntern ? (
+                      <option value="">No active supervisors available</option>
+                    ) : (
+                      supervisors.map((sup) => (
+                        <option key={sup.id} value={sup.id}>
+                          {sup.full_name}
+                          {sup.company_name ? ` — ${sup.company_name}` : ''}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <FormField
+                  id="create-account-company"
+                  name="company_name"
+                  label="Host Organization / Institution"
+                  type="text"
+                  placeholder={
+                    internshipType === 'on_campus'
+                      ? 'e.g. Romblon State University – Cajidiocan Campus'
+                      : 'e.g. Acme Tech Corp'
+                  }
+                  hint={
+                    internshipType === 'on_campus'
+                      ? 'School or university hosting the on-campus internship.'
+                      : 'Company, government agency, or external institution.'
+                  }
+                  value={companyName}
+                  onChange={(event) => {
+                    setCompanyName(event.target.value)
+                    if (formError) setFormError('')
+                  }}
+                />
+
+                <FormField
+                  id="create-account-department-office"
+                  name="department_office"
+                  label="Office / Department"
+                  type="text"
+                  placeholder={
+                    internshipType === 'on_campus'
+                      ? 'e.g. Information and Communications Technology Office'
+                      : 'e.g. Information Technology Department'
+                  }
+                  hint="Specific office, unit, or department where the intern is assigned."
+                  value={departmentOffice}
+                  onChange={(event) => {
+                    setDepartmentOffice(event.target.value)
+                    if (formError) setFormError('')
+                  }}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <FormField
+                  id="create-account-start-date"
+                  name="internship_start_date"
+                  label="Internship start date"
+                  type="date"
+                  value={startDate}
+                  onChange={(event) => {
+                    setStartDate(event.target.value)
+                    if (formError) setFormError('')
+                  }}
+                />
+
+                <FormField
+                  id="create-account-end-date"
+                  name="internship_end_date"
+                  label="Internship end date"
+                  type="date"
+                  min={startDate || undefined}
+                  value={endDate}
+                  onChange={(event) => {
+                    setEndDate(event.target.value)
+                    if (formError) setFormError('')
+                  }}
+                />
+
+                <FormField
+                  inputRef={requiredHoursRef}
+                  id="create-account-required-hours"
+                  name="required_hours"
+                  label="Required internship hours"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  step={1}
+                  required
+                  validationMessage="Enter a positive whole number of hours."
+                  value={requiredHours}
+                  onChange={(event) => {
+                    setRequiredHours(event.target.value)
+                    setFieldInvalidFallback(requiredHoursRef.current, false)
+                    if (formError) setFormError('')
+                  }}
+                />
+              </div>
+            </fieldset>
           </>
         ) : (
-          <FormField
-            id="create-account-supervisor-company"
-            name="company_name"
-            label="Company name"
-            type="text"
-            placeholder="e.g. Acme Tech Corp"
-            value={companyName}
-            onChange={(event) => {
-              setCompanyName(event.target.value)
-              if (formError) setFormError('')
-            }}
-          />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <FormField
+              id="create-account-supervisor-company"
+              name="company_name"
+              label="Host Organization / Institution"
+              type="text"
+              placeholder="e.g. Acme Tech Corp or RSU Cajidiocan Campus"
+              value={companyName}
+              onChange={(event) => {
+                setCompanyName(event.target.value)
+                if (formError) setFormError('')
+              }}
+            />
+
+            <FormField
+              id="create-account-supervisor-department"
+              name="department_office"
+              label="Office / Department"
+              type="text"
+              placeholder="e.g. Information Technology Department"
+              value={departmentOffice}
+              onChange={(event) => {
+                setDepartmentOffice(event.target.value)
+                if (formError) setFormError('')
+              }}
+            />
+          </div>
         )}
 
         <div className="flex flex-wrap items-center justify-end gap-2.5 border-t border-rule pt-4">
@@ -607,13 +753,25 @@ export function CoordinatorAccountsPage() {
 
         // Fallback to direct profiles read so accounts remain visible even if
         // manage-account Edge Function is temporarily unreachable
-        const { data: fallbackProfiles, error: fallbackErr } = await supabase
-          .from('profiles')
-          .select(
-            'id, full_name, role, supervisor_id, student_id_no, company_name, school_name, course, internship_start_date, required_hours, is_active, deactivated_at, deactivated_reason, created_at',
+        const { data: fallbackProfiles, error: fallbackErr } =
+          await runWithSchemaFallback(
+            () =>
+              supabase
+                .from('profiles')
+                .select(
+                  'id, full_name, role, supervisor_id, student_id_no, company_name, department_office, internship_type, school_name, course, year_level, internship_start_date, internship_end_date, required_hours, is_active, deactivated_at, deactivated_reason, created_at',
+                )
+                .order('role', { ascending: true })
+                .order('full_name', { ascending: true }),
+            () =>
+              supabase
+                .from('profiles')
+                .select(
+                  'id, full_name, role, supervisor_id, student_id_no, company_name, school_name, course, internship_start_date, required_hours, is_active, deactivated_at, deactivated_reason, created_at',
+                )
+                .order('role', { ascending: true })
+                .order('full_name', { ascending: true }),
           )
-          .order('role', { ascending: true })
-          .order('full_name', { ascending: true })
 
         if (!active) return
 
@@ -711,8 +869,11 @@ export function CoordinatorAccountsPage() {
         account.email,
         account.student_id_no,
         account.company_name,
+        account.department_office,
+        formatInternshipTypeLabel(account.internship_type),
         account.school_name,
         account.course,
+        account.year_level,
         supName,
         ROLE_LABELS[account.role] ?? account.role,
       ]
@@ -922,7 +1083,7 @@ export function CoordinatorAccountsPage() {
                   type="search"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Name, email, student ID, company, course, or supervisor…"
+                  placeholder="Name, email, student ID, host organization, office, course, or supervisor…"
                   className="min-h-10 w-full rounded-[5px] border border-input-border bg-surface px-3 text-sm text-ink placeholder:text-ink-muted/70 hover:border-ink"
                 />
               </div>
@@ -999,8 +1160,8 @@ export function CoordinatorAccountsPage() {
                       <th scope="col" className="w-32">
                         Student ID
                       </th>
-                      <th scope="col" className="w-40">
-                        Company
+                      <th scope="col" className="w-48">
+                        Host Organization / Institution
                       </th>
                       <th scope="col" className="w-40">
                         Supervisor
@@ -1008,8 +1169,8 @@ export function CoordinatorAccountsPage() {
                       <th scope="col" className="w-28">
                         Required
                       </th>
-                      <th scope="col" className="w-32">
-                        Start date
+                      <th scope="col" className="w-40">
+                        Internship period
                       </th>
                       <th scope="col" className="col-action w-28">
                         Actions
@@ -1026,9 +1187,30 @@ export function CoordinatorAccountsPage() {
                               ?.full_name ?? '—')
                           : '—'
                       const academicMeta = isIntern
-                        ? [account.course, account.school_name]
+                        ? [
+                            [account.course, account.year_level]
+                              .filter(Boolean)
+                              .join(' – '),
+                            account.school_name,
+                          ]
                             .filter(Boolean)
-                            .join(' — ')
+                            .join(' · ')
+                        : ''
+                      const hostOrgDisplay = resolveHostOrganizationName(account)
+                      const placementSubline = [
+                        account.department_office?.trim(),
+                        isIntern
+                          ? formatInternshipTypeLabel(account.internship_type)
+                          : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')
+                      const periodLabel = isIntern
+                        ? formatInternshipPeriod(
+                            account.internship_start_date,
+                            account.internship_end_date,
+                            formatCalendarDate,
+                          )
                         : ''
 
                       return (
@@ -1076,10 +1258,19 @@ export function CoordinatorAccountsPage() {
                               : '—'}
                           </td>
                           <td
-                            data-label="Company"
+                            data-label="Host Organization / Institution"
                             className="text-xs text-ink-muted"
                           >
-                            {account.company_name || '—'}
+                            <div className="min-w-0">
+                              <p className="text-ink">
+                                {hostOrgDisplay || '—'}
+                              </p>
+                              {placementSubline ? (
+                                <p className="mt-0.5 text-[11px] text-ink-muted">
+                                  {placementSubline}
+                                </p>
+                              ) : null}
+                            </div>
                           </td>
                           <td
                             data-label="Supervisor"
@@ -1096,18 +1287,10 @@ export function CoordinatorAccountsPage() {
                               : '—'}
                           </td>
                           <td
-                            data-label="Start date"
-                            className="whitespace-nowrap text-xs tabular-nums text-ink-muted"
+                            data-label="Internship period"
+                            className="text-xs tabular-nums text-ink-muted"
                           >
-                            {isIntern && account.internship_start_date ? (
-                              <time dateTime={account.internship_start_date}>
-                                {formatCalendarDate(
-                                  account.internship_start_date,
-                                )}
-                              </time>
-                            ) : (
-                              '—'
-                            )}
+                            {periodLabel || '—'}
                           </td>
                           <td data-label="Actions" className="col-action">
                             <AccountActionMenu

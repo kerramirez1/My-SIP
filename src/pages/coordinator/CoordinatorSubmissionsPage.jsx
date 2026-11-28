@@ -1306,10 +1306,10 @@ export function CoordinatorSubmissionsPage() {
                               <div className="min-w-0">
                                 <div className="flex min-w-0 items-center gap-1.5">
                                   <p
-                                    title={item.row.title}
+                                    title={item.titleSummary}
                                     className="min-w-0 truncate whitespace-nowrap text-[13px] font-medium text-ink"
                                   >
-                                    {item.row.title}
+                                    {item.titleSummary}
                                   </p>
                                   {item.row.attachment_url ? (
                                     <PaperclipIcon className="size-3 shrink-0 text-accent" />

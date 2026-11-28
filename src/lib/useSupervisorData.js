@@ -5,14 +5,24 @@ import {
   formatDurationMinutes,
 } from './attendanceUtils'
 import { DEFAULT_REQUIRED_INTERNSHIP_HOURS } from './internDashboardUtils'
+import {
+  isMissingSchemaRelationError,
+  resolveHostOrganizationName,
+  runWithSchemaFallback,
+} from './schemaCompat'
 import { supabase } from './supabaseClient'
-import { formatCalendarDate, formatWeekRange } from './weekUtils'
+import {
+  formatCalendarDate,
+  formatWeekRange,
+  formatWeekdayCalendarDate,
+} from './weekUtils'
 
 const EMPTY_DATA_STATE = {
   loadedKey: '',
   interns: [],
   attendance: [],
   accomplishments: [],
+  weeklyReflections: [],
   tasks: [],
   error: '',
 }
@@ -22,6 +32,18 @@ const TYPE_LABEL_SINGULAR = {
   accomplishments: 'Accomplishment',
   tasks: 'Task',
 }
+
+const INTERNS_SELECT_LATEST =
+  'id, full_name, student_id_no, company_name, department_office, internship_type, school_name, course, year_level, required_hours, internship_start_date, internship_end_date'
+
+const INTERNS_SELECT_LEGACY =
+  'id, full_name, student_id_no, company_name, school_name, course, required_hours, internship_start_date'
+
+const ACCOMPLISHMENTS_SELECT_LATEST =
+  'id, intern_id, week_of, entry_date, title, description, output_result, skills_acquired, challenges_encountered, lessons_learned, attachment_url, status, reviewed_by, reviewer_remarks, reviewed_at, created_at, updated_at'
+
+const ACCOMPLISHMENTS_SELECT_LEGACY =
+  'id, intern_id, week_of, title, description, skills_acquired, challenges_encountered, lessons_learned, attachment_url, status, reviewed_by, reviewer_remarks, reviewed_at, created_at, updated_at'
 
 export function extractIsoDatePart(timestamp) {
   const match = /^(\d{4}-\d{2}-\d{2})/.exec(String(timestamp ?? '').trim())
@@ -49,14 +71,22 @@ export function useSupervisorData(supervisorId) {
     let active = true
 
     Promise.all([
-      supabase
-        .from('profiles')
-        .select(
-          'id, full_name, student_id_no, company_name, school_name, course, required_hours, internship_start_date',
-        )
-        .eq('role', 'intern')
-        .eq('supervisor_id', supervisorId)
-        .order('full_name', { ascending: true }),
+      runWithSchemaFallback(
+        () =>
+          supabase
+            .from('profiles')
+            .select(INTERNS_SELECT_LATEST)
+            .eq('role', 'intern')
+            .eq('supervisor_id', supervisorId)
+            .order('full_name', { ascending: true }),
+        () =>
+          supabase
+            .from('profiles')
+            .select(INTERNS_SELECT_LEGACY)
+            .eq('role', 'intern')
+            .eq('supervisor_id', supervisorId)
+            .order('full_name', { ascending: true }),
+      ),
       supabase
         .from('weekly_attendance')
         .select(
@@ -64,39 +94,62 @@ export function useSupervisorData(supervisorId) {
         )
         .order('attendance_date', { ascending: false })
         .order('created_at', { ascending: false }),
+      runWithSchemaFallback(
+        () =>
+          supabase
+            .from('accomplishments')
+            .select(ACCOMPLISHMENTS_SELECT_LATEST)
+            .order('created_at', { ascending: false }),
+        () =>
+          supabase
+            .from('accomplishments')
+            .select(ACCOMPLISHMENTS_SELECT_LEGACY)
+            .order('created_at', { ascending: false }),
+      ),
       supabase
-        .from('accomplishments')
+        .from('weekly_accomplishment_reflections')
         .select(
-          'id, intern_id, week_of, title, description, skills_acquired, challenges_encountered, lessons_learned, attachment_url, status, reviewed_by, reviewer_remarks, reviewed_at, created_at, updated_at',
-        )
-        .order('created_at', { ascending: false }),
+          'id, intern_id, week_of, skills_acquired, challenges_encountered, lessons_learned, created_at, updated_at',
+        ),
       supabase
         .from('tasks')
         .select(
           'id, intern_id, assigned_by, title, description, task_date, deadline, priority, completion_description, submission_attachment_url, submitted_at, status, reviewed_by, reviewer_remarks, reviewed_at, created_at, updated_at',
         )
         .order('created_at', { ascending: false }),
-    ]).then(([internsRes, attendanceRes, accomplishmentsRes, tasksRes]) => {
-      if (!active) return
+    ]).then(
+      ([
+        internsRes,
+        attendanceRes,
+        accomplishmentsRes,
+        reflectionsRes,
+        tasksRes,
+      ]) => {
+        if (!active) return
 
-      const errors = [
-        internsRes.error?.message,
-        attendanceRes.error?.message,
-        accomplishmentsRes.error?.message,
-        tasksRes.error?.message,
-      ].filter(Boolean)
+        const reflMissing = isMissingSchemaRelationError(reflectionsRes.error)
+        const errors = [
+          internsRes.error?.message,
+          attendanceRes.error?.message,
+          accomplishmentsRes.error?.message,
+          !reflMissing ? reflectionsRes.error?.message : null,
+          tasksRes.error?.message,
+        ].filter(Boolean)
 
-      setDataState({
-        loadedKey: currentQueryKey,
-        interns: internsRes.error ? [] : (internsRes.data ?? []),
-        attendance: attendanceRes.error ? [] : (attendanceRes.data ?? []),
-        accomplishments: accomplishmentsRes.error
-          ? []
-          : (accomplishmentsRes.data ?? []),
-        tasks: tasksRes.error ? [] : (tasksRes.data ?? []),
-        error: errors.length > 0 ? errors[0] : '',
-      })
-    })
+        setDataState({
+          loadedKey: currentQueryKey,
+          interns: internsRes.error ? [] : (internsRes.data ?? []),
+          attendance: attendanceRes.error ? [] : (attendanceRes.data ?? []),
+          accomplishments: accomplishmentsRes.error
+            ? []
+            : (accomplishmentsRes.data ?? []),
+          weeklyReflections:
+            reflectionsRes.error ? [] : (reflectionsRes.data ?? []),
+          tasks: tasksRes.error ? [] : (tasksRes.data ?? []),
+          error: errors.length > 0 ? errors[0] : '',
+        })
+      },
+    )
 
     return () => {
       active = false
@@ -119,9 +172,27 @@ export function useSupervisorData(supervisorId) {
     const accomplishments = (hasLoaded ? dataState.accomplishments : []).filter(
       (row) => internById.has(row.intern_id),
     )
+    const weeklyReflections = (
+      hasLoaded ? dataState.weeklyReflections : []
+    ).filter((row) => internById.has(row.intern_id))
     const tasks = (hasLoaded ? dataState.tasks : []).filter((row) =>
       internById.has(row.intern_id),
     )
+
+    // Group all accomplishment entries and reflections by (intern_id, week_of)
+    // so the Weekly Accomplishment Document renders the full canonical week.
+    const accomplishmentsByInternWeek = new Map()
+    for (const row of accomplishments) {
+      const weekKey = `${row.intern_id}:${row.week_of}`
+      const list = accomplishmentsByInternWeek.get(weekKey)
+      if (list) list.push(row)
+      else accomplishmentsByInternWeek.set(weekKey, [row])
+    }
+
+    const reflectionsByInternWeek = new Map()
+    for (const refl of weeklyReflections) {
+      reflectionsByInternWeek.set(`${refl.intern_id}:${refl.week_of}`, refl)
+    }
 
     // Approved break-adjusted attendance minutes per intern
     const approvedMinutesByIntern = new Map()
@@ -182,23 +253,42 @@ export function useSupervisorData(supervisorId) {
         }
       })
 
+    const buildAccomplishmentPlacementMeta = (row) => {
+      const intern = internById.get(row.intern_id)
+      const weekKey = `${row.intern_id}:${row.week_of}`
+      return {
+        internName: intern?.full_name || 'Intern',
+        studentIdNo: intern?.student_id_no || '',
+        course: intern?.course || '',
+        yearLevel: intern?.year_level || '',
+        schoolName: intern?.school_name || '',
+        internshipType: intern?.internship_type || '',
+        hostOrganization: resolveHostOrganizationName(intern),
+        companyName: intern?.company_name || '',
+        departmentOffice: intern?.department_office || '',
+        requiredHours: intern?.required_hours ?? null,
+        internshipStartDate: intern?.internship_start_date || '',
+        internshipEndDate: intern?.internship_end_date || '',
+        weekRows: accomplishmentsByInternWeek.get(weekKey) ?? [row],
+        weeklyReflection: reflectionsByInternWeek.get(weekKey) ?? null,
+      }
+    }
+
     const pendingAccomplishments = accomplishments
       .filter((row) => row.status === 'pending')
-      .map((row) => {
-        const intern = internById.get(row.intern_id)
-        return {
-          key: `accomplishments-${row.id}`,
-          type: 'accomplishments',
-          typeLabel: TYPE_LABEL_SINGULAR.accomplishments,
-          internName: intern?.full_name || 'Intern',
-          studentIdNo: intern?.student_id_no || '',
-          course: intern?.course || '',
-          schoolName: intern?.school_name || '',
-          companyName: intern?.company_name || '',
-          sortAt: row.updated_at || row.created_at || row.week_of || '',
-          row,
-        }
-      })
+      .map((row) => ({
+        key: `accomplishments-${row.id}`,
+        type: 'accomplishments',
+        typeLabel: TYPE_LABEL_SINGULAR.accomplishments,
+        ...buildAccomplishmentPlacementMeta(row),
+        sortAt:
+          row.updated_at ||
+          row.created_at ||
+          row.entry_date ||
+          row.week_of ||
+          '',
+        row,
+      }))
 
     // Tasks MUST have status === 'pending' AND submitted_at IS NOT NULL
     const pendingTasks = tasks
@@ -245,17 +335,15 @@ export function useSupervisorData(supervisorId) {
       ...accomplishments
         .filter((row) => row.reviewed_by === supervisorId && row.reviewed_at)
         .map((row) => {
-          const intern = internById.get(row.intern_id)
+          const datePrefix = row.entry_date
+            ? `${formatWeekdayCalendarDate(row.entry_date)} — `
+            : ''
           return {
             key: `rev-accomplishments-${row.id}`,
             type: 'accomplishments',
-            internName: intern?.full_name || 'Intern',
-            studentIdNo: intern?.student_id_no || '',
-            course: intern?.course || '',
-            schoolName: intern?.school_name || '',
-            companyName: intern?.company_name || '',
+            ...buildAccomplishmentPlacementMeta(row),
             typeLabel: TYPE_LABEL_SINGULAR.accomplishments,
-            summaryLabel: `${row.title} (${formatWeekRange(row.week_of)})`,
+            summaryLabel: `${datePrefix}${row.title} (${formatWeekRange(row.week_of, 5)})`,
             status: row.status,
             remarks: row.reviewer_remarks,
             reviewedAt: row.reviewed_at,
@@ -296,6 +384,7 @@ export function useSupervisorData(supervisorId) {
     dataState.attendance,
     dataState.interns,
     dataState.tasks,
+    dataState.weeklyReflections,
     hasLoaded,
     supervisorId,
   ])

@@ -10,10 +10,16 @@ import {
   DEFAULT_REQUIRED_INTERNSHIP_HOURS,
   getCalendarDayDiff,
 } from './internDashboardUtils'
+import {
+  isMissingSchemaRelationError,
+  resolveHostOrganizationName,
+  runWithSchemaFallback,
+} from './schemaCompat'
 import { supabase } from './supabaseClient'
 import {
   formatCalendarDate,
   formatWeekRange,
+  formatWeekdayCalendarDate,
   getMondayOfWeek,
   getTodayIsoDate,
 } from './weekUtils'
@@ -23,9 +29,22 @@ const EMPTY_DATA_STATE = {
   profiles: [],
   attendance: [],
   accomplishments: [],
+  weeklyReflections: [],
   tasks: [],
   error: '',
 }
+
+const COORDINATOR_PROFILES_SELECT_LATEST =
+  'id, full_name, role, supervisor_id, student_id_no, company_name, department_office, internship_type, school_name, course, year_level, required_hours, internship_start_date, internship_end_date, is_active, created_at'
+
+const COORDINATOR_PROFILES_SELECT_LEGACY =
+  'id, full_name, role, supervisor_id, student_id_no, company_name, school_name, course, required_hours, internship_start_date, is_active, created_at'
+
+const COORDINATOR_ACCOMPLISHMENTS_SELECT_LATEST =
+  'id, intern_id, week_of, entry_date, title, description, output_result, skills_acquired, challenges_encountered, lessons_learned, attachment_url, status, reviewed_by, reviewer_remarks, reviewed_at, created_at, updated_at'
+
+const COORDINATOR_ACCOMPLISHMENTS_SELECT_LEGACY =
+  'id, intern_id, week_of, title, description, skills_acquired, challenges_encountered, lessons_learned, attachment_url, status, reviewed_by, reviewer_remarks, reviewed_at, created_at, updated_at'
 
 const TABLE_BY_KIND = {
   attendance: 'weekly_attendance',
@@ -214,8 +233,11 @@ export function buildProgressReportCsv(internProgressRows) {
     'Full name',
     'Student ID',
     'School',
-    'Course',
-    'Company',
+    'Course / Program',
+    'Year Level',
+    'Internship Type',
+    'Host Organization / Institution',
+    'Office / Department',
     'Supervisor',
     'Required hours',
     'Approved hours',
@@ -231,7 +253,14 @@ export function buildProgressReportCsv(internProgressRows) {
     intern.student_id_no ?? '',
     intern.school_name ?? '',
     intern.course ?? '',
-    intern.company_name ?? '',
+    intern.year_level ?? '',
+    intern.internship_type === 'on_campus'
+      ? 'On-campus'
+      : intern.internship_type === 'off_campus'
+        ? 'Off-campus'
+        : '',
+    resolveHostOrganizationName(intern),
+    intern.department_office ?? '',
     intern.supervisorName === '—' ? '' : intern.supervisorName,
     intern.requiredHours,
     intern.approvedHours.toFixed(2),
@@ -372,7 +401,8 @@ export function extractFilterOptions({
   }
 
   for (const p of profiles) {
-    if (p.company_name?.trim()) companySet.add(p.company_name.trim())
+    const resolvedHostOrg = resolveHostOrganizationName(p)
+    if (resolvedHostOrg) companySet.add(resolvedHostOrg)
     if (p.role === 'supervisor') {
       supervisors.push({
         id: p.id,
@@ -417,6 +447,7 @@ export function buildCoordinatorMonitoringData({
   profiles = [],
   attendance = [],
   accomplishments = [],
+  weeklyReflections = [],
   tasks = [],
   filters = {},
   todayIso = getTodayIsoDate(),
@@ -458,7 +489,7 @@ export function buildCoordinatorMonitoringData({
 
   // Match interns against global cohort/org/supervisor filters
   const filteredInterns = allInternProfiles.filter((intern) => {
-    if (company !== 'all' && (intern.company_name?.trim() || '') !== company) {
+    if (company !== 'all' && resolveHostOrganizationName(intern) !== company) {
       return false
     }
     if (supervisorId === 'unassigned') {
@@ -592,6 +623,8 @@ export function buildCoordinatorMonitoringData({
       course: internProfile?.course?.trim() || '',
       schoolName: internProfile?.school_name?.trim() || '',
       companyName: internProfile?.company_name?.trim() || '',
+      requiredHours: internProfile?.required_hours ?? null,
+      internshipStartDate: internProfile?.internship_start_date || '',
       supervisorId: internProfile?.supervisor_id || null,
       supervisorName: resolveSupervisorNameForIntern(internProfile),
       reviewerName,
@@ -625,12 +658,34 @@ export function buildCoordinatorMonitoringData({
     }
   })
 
+  // Group ALL accomplishment rows and weekly reflections by (intern_id, week_of)
+  // across the unfiltered dataset so every weekly document shows the complete week.
+  const allAccomplishmentsByInternWeek = new Map()
+  for (const row of accomplishments) {
+    const weekKey = `${row.intern_id}:${row.week_of}`
+    const list = allAccomplishmentsByInternWeek.get(weekKey)
+    if (list) list.push(row)
+    else allAccomplishmentsByInternWeek.set(weekKey, [row])
+  }
+
+  const reflectionsByInternWeek = new Map()
+  for (const refl of weeklyReflections) {
+    reflectionsByInternWeek.set(`${refl.intern_id}:${refl.week_of}`, refl)
+  }
+
   const accomplishmentItems = scopedAccomplishments.map((row) => {
     const internProfile = profileById.get(row.intern_id)
     const displayStatusKey = getDisplayStatusKey('accomplishments', row)
     const internName = resolveName(row.intern_id)
     const reviewerName = resolveName(row.reviewed_by)
     const subDateIso = extractIsoDatePart(row.created_at) || row.week_of || ''
+    const weekKey = `${row.intern_id}:${row.week_of}`
+    const weekRows = allAccomplishmentsByInternWeek.get(weekKey) ?? [row]
+    const weeklyReflection = reflectionsByInternWeek.get(weekKey) ?? null
+    const hostOrganization = resolveHostOrganizationName(internProfile)
+    const entryTitleLabel = row.entry_date
+      ? formatWeekdayCalendarDate(row.entry_date)
+      : row.title
 
     return {
       key: `accomplishments-${row.id}`,
@@ -642,19 +697,30 @@ export function buildCoordinatorMonitoringData({
       internName,
       studentIdNo: internProfile?.student_id_no?.trim() || '',
       course: internProfile?.course?.trim() || '',
+      yearLevel: internProfile?.year_level?.trim() || '',
       schoolName: internProfile?.school_name?.trim() || '',
-      companyName: internProfile?.company_name?.trim() || '',
+      internshipType: internProfile?.internship_type || '',
+      hostOrganization,
+      companyName: hostOrganization,
+      departmentOffice: internProfile?.department_office?.trim() || '',
+      requiredHours: internProfile?.required_hours ?? null,
+      internshipStartDate: internProfile?.internship_start_date || '',
+      internshipEndDate: internProfile?.internship_end_date || '',
       supervisorId: internProfile?.supervisor_id || null,
       supervisorName: resolveSupervisorNameForIntern(internProfile),
       reviewerName,
       assignerName: '',
       renderedMinutes: null,
       isIncompleteAttendance: false,
-      titleSummary: row.title,
-      subtitleSummary: row.week_of ? `Week of ${formatWeekRange(row.week_of)}` : '',
-      shortTitle: row.title,
-      csvTitleOrDate: row.title,
-      reportingPeriod: row.week_of ? formatWeekRange(row.week_of) : '—',
+      titleSummary: entryTitleLabel,
+      subtitleSummary: row.week_of
+        ? `Week of ${formatWeekRange(row.week_of, 5)}`
+        : '',
+      shortTitle: entryTitleLabel,
+      csvTitleOrDate: row.entry_date
+        ? `${row.entry_date} — ${row.description || row.title}`
+        : row.title,
+      reportingPeriod: row.week_of ? formatWeekRange(row.week_of, 5) : '—',
       status: row.status,
       displayStatusKey,
       displayStatusLabel:
@@ -662,7 +728,12 @@ export function buildCoordinatorMonitoringData({
       isSubmittedTask: true,
       submissionDateIso: subDateIso,
       submittedOrDateIso: subDateIso,
-      sortAt: row.updated_at || row.created_at || row.week_of || '',
+      sortAt:
+        row.updated_at ||
+        row.created_at ||
+        row.entry_date ||
+        row.week_of ||
+        '',
       history: buildSubmissionHistory(
         'accomplishments',
         row,
@@ -670,6 +741,8 @@ export function buildCoordinatorMonitoringData({
         '',
         reviewerName,
       ),
+      weekRows,
+      weeklyReflection,
       row,
     }
   })
@@ -695,6 +768,8 @@ export function buildCoordinatorMonitoringData({
       course: internProfile?.course?.trim() || '',
       schoolName: internProfile?.school_name?.trim() || '',
       companyName: internProfile?.company_name?.trim() || '',
+      requiredHours: internProfile?.required_hours ?? null,
+      internshipStartDate: internProfile?.internship_start_date || '',
       supervisorId: internProfile?.supervisor_id || null,
       supervisorName: resolveSupervisorNameForIntern(internProfile),
       reviewerName,
@@ -1629,12 +1704,18 @@ export function useCoordinatorData(filters = {}) {
     let active = true
 
     Promise.all([
-      supabase
-        .from('profiles')
-        .select(
-          'id, full_name, role, supervisor_id, student_id_no, company_name, school_name, course, required_hours, internship_start_date, is_active, created_at',
-        )
-        .order('full_name', { ascending: true }),
+      runWithSchemaFallback(
+        () =>
+          supabase
+            .from('profiles')
+            .select(COORDINATOR_PROFILES_SELECT_LATEST)
+            .order('full_name', { ascending: true }),
+        () =>
+          supabase
+            .from('profiles')
+            .select(COORDINATOR_PROFILES_SELECT_LEGACY)
+            .order('full_name', { ascending: true }),
+      ),
       supabase
         .from('weekly_attendance')
         .select(
@@ -1642,39 +1723,62 @@ export function useCoordinatorData(filters = {}) {
         )
         .order('attendance_date', { ascending: false })
         .order('created_at', { ascending: false }),
+      runWithSchemaFallback(
+        () =>
+          supabase
+            .from('accomplishments')
+            .select(COORDINATOR_ACCOMPLISHMENTS_SELECT_LATEST)
+            .order('created_at', { ascending: false }),
+        () =>
+          supabase
+            .from('accomplishments')
+            .select(COORDINATOR_ACCOMPLISHMENTS_SELECT_LEGACY)
+            .order('created_at', { ascending: false }),
+      ),
       supabase
-        .from('accomplishments')
+        .from('weekly_accomplishment_reflections')
         .select(
-          'id, intern_id, week_of, title, description, skills_acquired, challenges_encountered, lessons_learned, attachment_url, status, reviewed_by, reviewer_remarks, reviewed_at, created_at, updated_at',
-        )
-        .order('created_at', { ascending: false }),
+          'id, intern_id, week_of, skills_acquired, challenges_encountered, lessons_learned, created_at, updated_at',
+        ),
       supabase
         .from('tasks')
         .select(
           'id, intern_id, assigned_by, title, description, task_date, deadline, priority, completion_description, submission_attachment_url, submitted_at, status, reviewed_by, reviewer_remarks, reviewed_at, created_at, updated_at',
         )
         .order('created_at', { ascending: false }),
-    ]).then(([profilesRes, attendanceRes, accomplishmentsRes, tasksRes]) => {
-      if (!active) return
+    ]).then(
+      ([
+        profilesRes,
+        attendanceRes,
+        accomplishmentsRes,
+        reflectionsRes,
+        tasksRes,
+      ]) => {
+        if (!active) return
 
-      const errors = [
-        profilesRes.error?.message,
-        attendanceRes.error?.message,
-        accomplishmentsRes.error?.message,
-        tasksRes.error?.message,
-      ].filter(Boolean)
+        const reflMissing = isMissingSchemaRelationError(reflectionsRes.error)
+        const errors = [
+          profilesRes.error?.message,
+          attendanceRes.error?.message,
+          accomplishmentsRes.error?.message,
+          !reflMissing ? reflectionsRes.error?.message : null,
+          tasksRes.error?.message,
+        ].filter(Boolean)
 
-      setDataState({
-        loadedKey: currentQueryKey,
-        profiles: profilesRes.error ? [] : (profilesRes.data ?? []),
-        attendance: attendanceRes.error ? [] : (attendanceRes.data ?? []),
-        accomplishments: accomplishmentsRes.error
-          ? []
-          : (accomplishmentsRes.data ?? []),
-        tasks: tasksRes.error ? [] : (tasksRes.data ?? []),
-        error: errors.length > 0 ? errors[0] : '',
-      })
-    })
+        setDataState({
+          loadedKey: currentQueryKey,
+          profiles: profilesRes.error ? [] : (profilesRes.data ?? []),
+          attendance: attendanceRes.error ? [] : (attendanceRes.data ?? []),
+          accomplishments: accomplishmentsRes.error
+            ? []
+            : (accomplishmentsRes.data ?? []),
+          weeklyReflections:
+            reflectionsRes.error ? [] : (reflectionsRes.data ?? []),
+          tasks: tasksRes.error ? [] : (tasksRes.data ?? []),
+          error: errors.length > 0 ? errors[0] : '',
+        })
+      },
+    )
 
     return () => {
       active = false
@@ -1718,6 +1822,7 @@ export function useCoordinatorData(filters = {}) {
         profiles: hasLoaded ? dataState.profiles : [],
         attendance: hasLoaded ? dataState.attendance : [],
         accomplishments: hasLoaded ? dataState.accomplishments : [],
+        weeklyReflections: hasLoaded ? dataState.weeklyReflections : [],
         tasks: hasLoaded ? dataState.tasks : [],
         filters: {
           academicYear,
@@ -1738,6 +1843,7 @@ export function useCoordinatorData(filters = {}) {
       dataState.attendance,
       dataState.profiles,
       dataState.tasks,
+      dataState.weeklyReflections,
       dateFrom,
       dateTo,
       hasLoaded,

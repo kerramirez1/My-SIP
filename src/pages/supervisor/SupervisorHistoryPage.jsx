@@ -183,13 +183,24 @@ export function SupervisorHistoryPage() {
       <AccomplishmentDocumentDialog
         open={Boolean(documentItem)}
         onClose={() => setDocumentItem(null)}
+        rows={documentItem?.weekRows ?? (documentItem?.row ? [documentItem.row] : null)}
         row={documentItem?.row ?? null}
+        weekOf={documentItem?.row?.week_of ?? ''}
+        weeklyReflection={documentItem?.weeklyReflection ?? null}
         internName={documentItem?.internName}
         studentIdNo={documentItem?.studentIdNo}
         course={documentItem?.course}
+        yearLevel={documentItem?.yearLevel}
         schoolName={documentItem?.schoolName}
+        internshipType={documentItem?.internshipType}
+        hostOrganization={documentItem?.hostOrganization}
         companyName={documentItem?.companyName}
+        departmentOffice={documentItem?.departmentOffice}
         supervisorName={profile?.full_name}
+        reviewerName={profile?.full_name}
+        requiredHours={documentItem?.requiredHours}
+        internshipStartDate={documentItem?.internshipStartDate}
+        internshipEndDate={documentItem?.internshipEndDate}
       />
     </div>
   )

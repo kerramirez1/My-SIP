@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AccomplishmentDocumentDialog } from '../../components/AccomplishmentDocumentDialog'
 import { AlertMessage } from '../../components/AlertMessage'
 import { FormField } from '../../components/FormField'
@@ -15,6 +15,16 @@ import { StatusBadge } from '../../components/StatusBadge'
 import { SubmissionDialog } from '../../components/SubmissionDialog'
 import { useAuth } from '../../context/useAuth'
 import {
+  computeWeeklyReviewStatus,
+  resolveWeeklyReflection,
+} from '../../lib/accomplishmentDocument'
+import {
+  isMissingSchemaColumnError,
+  isMissingSchemaRelationError,
+  resolveHostOrganizationName,
+  runWithSchemaFallback,
+} from '../../lib/schemaCompat'
+import {
   buildAttachmentFileName,
   getAttachmentDisplayName,
   getReviewResetPayload,
@@ -27,6 +37,8 @@ import { useDocumentTitle } from '../../lib/useDocumentTitle'
 import { useFormValidationSync } from '../../lib/useFormValidationSync'
 import {
   formatWeekRange,
+  formatWeekdayCalendarDate,
+  getIsoDayOfWeek,
   getMondayOfWeek,
   getTodayIsoDate,
   shiftIsoDate,
@@ -35,8 +47,15 @@ import {
 const EMPTY_LIST_STATE = {
   loadedKey: '',
   items: [],
+  reflectionRow: null,
   error: '',
 }
+
+const ACCOMPLISHMENT_SELECT_LATEST =
+  'id, intern_id, week_of, entry_date, title, description, output_result, skills_acquired, challenges_encountered, lessons_learned, attachment_url, status, reviewed_by, reviewer_remarks, reviewed_at, created_at'
+
+const ACCOMPLISHMENT_SELECT_LEGACY =
+  'id, intern_id, week_of, title, description, skills_acquired, challenges_encountered, lessons_learned, attachment_url, status, reviewed_by, reviewer_remarks, reviewed_at, created_at'
 
 function FileNameLabel({ objectPath }) {
   const displayName = getAttachmentDisplayName(objectPath)
@@ -58,6 +77,60 @@ function clearFormValidationClasses(form) {
   }
 }
 
+function defaultDailyEntryDate(weekOfIso, existingItems = []) {
+  const today = getTodayIsoDate()
+  const todayMonday = getMondayOfWeek(today)
+  const usedDates = new Set(
+    existingItems.map((row) => row.entry_date).filter(Boolean),
+  )
+
+  // If viewing the current week and today is Mon-Sat and unused, default to today.
+  if (
+    todayMonday === weekOfIso &&
+    getIsoDayOfWeek(today) !== 0 &&
+    !usedDates.has(today)
+  ) {
+    return today
+  }
+
+  // Otherwise choose the first open weekday (Monday-Saturday) of the week.
+  for (let offset = 0; offset <= 5; offset += 1) {
+    const candidate = shiftIsoDate(weekOfIso, offset)
+    if (!usedDates.has(candidate)) return candidate
+  }
+
+  return weekOfIso
+}
+
+function deriveEntryTitle(entryDate, descriptionText) {
+  const firstLine = String(descriptionText ?? '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean)
+  if (firstLine) {
+    return firstLine.length > 120 ? `${firstLine.slice(0, 117)}…` : firstLine
+  }
+  return entryDate
+    ? `Daily Accomplishment (${formatWeekdayCalendarDate(entryDate)})`
+    : 'Weekly Accomplishment'
+}
+
+function sortWeekEntries(rows) {
+  return [...rows].sort((a, b) => {
+    const aDate = String(a.entry_date ?? '')
+    const bDate = String(b.entry_date ?? '')
+    if (aDate && bDate) {
+      const cmp = aDate.localeCompare(bDate)
+      if (cmp !== 0) return cmp
+    } else if (aDate && !bDate) {
+      return -1
+    } else if (!aDate && bDate) {
+      return 1
+    }
+    return String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''))
+  })
+}
+
 export function AccomplishmentsPage() {
   useDocumentTitle('Accomplishments')
 
@@ -76,28 +149,38 @@ export function AccomplishmentsPage() {
     name: '',
   })
   const [reloadCounter, setReloadCounter] = useState(0)
-  const [documentRow, setDocumentRow] = useState(null)
+  const [documentOpen, setDocumentOpen] = useState(false)
 
+  // Daily entry modal state
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingRow, setEditingRow] = useState(null)
   const [formDate, setFormDate] = useState(initialToday)
-  const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [skillsAcquired, setSkillsAcquired] = useState('')
-  const [challengesEncountered, setChallengesEncountered] = useState('')
-  const [lessonsLearned, setLessonsLearned] = useState('')
+  const [outputResult, setOutputResult] = useState('')
   const [selectedFile, setSelectedFile] = useState(null)
-  const [removeExistingAttachment, setRemoveExistingAttachment] = useState(false)
+  const [removeExistingAttachment, setRemoveExistingAttachment] =
+    useState(false)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
   const [pageSuccess, setPageSuccess] = useState('')
+
+  // Weekly reflection form state (once per reporting week)
+  const [reflectionDraft, setReflectionDraft] = useState({
+    key: '',
+    skills: '',
+    challenges: '',
+    lessons: '',
+  })
+  const [savingReflection, setSavingReflection] = useState(false)
+  const [reflectionError, setReflectionError] = useState('')
+  const [reflectionSuccess, setReflectionSuccess] = useState('')
 
   const [openingId, setOpeningId] = useState(null)
   const [attachmentError, setAttachmentError] = useState('')
   const [signedUrlsById, setSignedUrlsById] = useState({})
 
   const formRef = useRef(null)
-  const titleInputRef = useRef(null)
+  const activityInputRef = useRef(null)
   const fileInputRef = useRef(null)
 
   useFormValidationSync(formRef)
@@ -113,22 +196,50 @@ export function AccomplishmentsPage() {
 
     let active = true
 
-    supabase
-      .from('accomplishments')
-      .select(
-        'id, intern_id, week_of, title, description, skills_acquired, challenges_encountered, lessons_learned, attachment_url, status, reviewed_by, reviewer_remarks, reviewed_at, created_at',
-      )
-      .eq('intern_id', internId)
-      .eq('week_of', selectedWeekOf)
-      .order('created_at', { ascending: false })
-      .then(({ data, error }) => {
-        if (!active) return
-        setListState({
-          loadedKey: currentQueryKey,
-          items: error ? [] : (data ?? []),
-          error: error ? error.message : '',
-        })
+    Promise.all([
+      runWithSchemaFallback(
+        () =>
+          supabase
+            .from('accomplishments')
+            .select(ACCOMPLISHMENT_SELECT_LATEST)
+            .eq('intern_id', internId)
+            .eq('week_of', selectedWeekOf)
+            .order('entry_date', { ascending: true, nullsFirst: false })
+            .order('created_at', { ascending: true }),
+        () =>
+          supabase
+            .from('accomplishments')
+            .select(ACCOMPLISHMENT_SELECT_LEGACY)
+            .eq('intern_id', internId)
+            .eq('week_of', selectedWeekOf)
+            .order('created_at', { ascending: true }),
+      ),
+      supabase
+        .from('weekly_accomplishment_reflections')
+        .select(
+          'id, intern_id, week_of, skills_acquired, challenges_encountered, lessons_learned, created_at, updated_at',
+        )
+        .eq('intern_id', internId)
+        .eq('week_of', selectedWeekOf)
+        .maybeSingle(),
+    ]).then(([entriesRes, reflectionRes]) => {
+      if (!active) return
+      const reflMissingTable = isMissingSchemaRelationError(reflectionRes.error)
+      const firstError =
+        entriesRes.error?.message ||
+        (!reflMissingTable && reflectionRes.error?.message) ||
+        ''
+
+      setListState({
+        loadedKey: currentQueryKey,
+        items: entriesRes.error ? [] : sortWeekEntries(entriesRes.data ?? []),
+        reflectionRow:
+          reflectionRes.error || !reflectionRes.data
+            ? null
+            : reflectionRes.data,
+        error: firstError,
       })
+    })
 
     return () => {
       active = false
@@ -166,30 +277,76 @@ export function AccomplishmentsPage() {
   const loadingList = Boolean(
     supabase && currentQueryKey && listState.loadedKey !== currentQueryKey,
   )
-  const items = listState.loadedKey === currentQueryKey ? listState.items : []
+  const items = useMemo(
+    () => (listState.loadedKey === currentQueryKey ? listState.items : []),
+    [currentQueryKey, listState.items, listState.loadedKey],
+  )
+  const reflectionRow =
+    listState.loadedKey === currentQueryKey ? listState.reflectionRow : null
   const listError =
     attachmentError ||
     (listState.loadedKey === currentQueryKey ? listState.error : '')
 
-  const statusCounts = items.reduce(
-    (counts, row) => {
-      if (row.status === 'approved') counts.approved += 1
-      else if (row.status === 'rejected') counts.rejected += 1
-      else if (row.status === 'returned') counts.returned += 1
-      else counts.pending += 1
-      return counts
-    },
-    { pending: 0, returned: 0, rejected: 0, approved: 0 },
+  const resolvedReflection = useMemo(
+    () => resolveWeeklyReflection(reflectionRow, items),
+    [items, reflectionRow],
   )
 
-  function resetForm(targetDate = filterDate) {
+  const weeklyStatus = useMemo(() => computeWeeklyReviewStatus(items), [items])
+  const isWeekReflectionLocked = items.length > 0 && weeklyStatus.isApproved
+
+  const activeSkills =
+    reflectionDraft.key === currentQueryKey
+      ? reflectionDraft.skills
+      : resolvedReflection.skills_acquired
+  const activeChallenges =
+    reflectionDraft.key === currentQueryKey
+      ? reflectionDraft.challenges
+      : resolvedReflection.challenges_encountered
+  const activeLessons =
+    reflectionDraft.key === currentQueryKey
+      ? reflectionDraft.lessons
+      : resolvedReflection.lessons_learned
+
+  const hasWeeklyDocumentData =
+    items.length > 0 ||
+    Boolean(
+      resolvedReflection.skills_acquired.trim() ||
+        resolvedReflection.challenges_encountered.trim() ||
+        resolvedReflection.lessons_learned.trim(),
+    )
+
+  function updateReflectionField(field, value) {
+    setReflectionError('')
+    setReflectionSuccess('')
+    setReflectionDraft((prev) => ({
+      key: currentQueryKey,
+      skills:
+        field === 'skills'
+          ? value
+          : prev.key === currentQueryKey
+            ? prev.skills
+            : resolvedReflection.skills_acquired,
+      challenges:
+        field === 'challenges'
+          ? value
+          : prev.key === currentQueryKey
+            ? prev.challenges
+            : resolvedReflection.challenges_encountered,
+      lessons:
+        field === 'lessons'
+          ? value
+          : prev.key === currentQueryKey
+            ? prev.lessons
+            : resolvedReflection.lessons_learned,
+    }))
+  }
+
+  function resetForm(targetDate = defaultDailyEntryDate(selectedWeekOf, items)) {
     setEditingRow(null)
     setFormDate(targetDate)
-    setTitle('')
     setDescription('')
-    setSkillsAcquired('')
-    setChallengesEncountered('')
-    setLessonsLearned('')
+    setOutputResult('')
     setSelectedFile(null)
     setRemoveExistingAttachment(false)
     setFormError('')
@@ -200,20 +357,17 @@ export function AccomplishmentsPage() {
   }
 
   function openCreateDialog() {
-    resetForm(selectedWeekOf || filterDate)
+    resetForm(defaultDailyEntryDate(selectedWeekOf, items))
     setDialogOpen(true)
-    window.requestAnimationFrame(() => titleInputRef.current?.focus())
+    window.requestAnimationFrame(() => activityInputRef.current?.focus())
   }
 
   function openEditDialog(row) {
     if (!isEditableSubmissionStatus(row.status)) return
     setEditingRow(row)
-    setFormDate(row.week_of)
-    setTitle(row.title ?? '')
-    setDescription(row.description ?? '')
-    setSkillsAcquired(row.skills_acquired ?? '')
-    setChallengesEncountered(row.challenges_encountered ?? '')
-    setLessonsLearned(row.lessons_learned ?? '')
+    setFormDate(row.entry_date || row.week_of || selectedWeekOf)
+    setDescription(row.description ?? row.title ?? '')
+    setOutputResult(row.output_result ?? '')
     setSelectedFile(null)
     setRemoveExistingAttachment(false)
     setFormError('')
@@ -222,7 +376,7 @@ export function AccomplishmentsPage() {
     }
     clearFormValidationClasses(formRef.current)
     setDialogOpen(true)
-    window.requestAnimationFrame(() => titleInputRef.current?.focus())
+    window.requestAnimationFrame(() => activityInputRef.current?.focus())
   }
 
   const handleCloseDialog = useCallback(() => {
@@ -234,6 +388,8 @@ export function AccomplishmentsPage() {
     const baseMonday = selectedWeekOf || getMondayOfWeek(getTodayIsoDate())
     setAttachmentError('')
     setPageSuccess('')
+    setReflectionError('')
+    setReflectionSuccess('')
     setFilterDate(shiftIsoDate(baseMonday, deltaDays))
   }
 
@@ -245,25 +401,54 @@ export function AccomplishmentsPage() {
       return
     }
 
-    const trimmedTitle = title.trim()
+    const trimmedDate = String(formDate ?? '').trim()
     const trimmedDescription = description.trim()
-    const trimmedSkills = skillsAcquired.trim()
-    const trimmedChallenges = challengesEncountered.trim()
-    const trimmedLessons = lessonsLearned.trim()
-    if (!trimmedTitle) {
-      setFormError('Please enter a title for this accomplishment.')
-      titleInputRef.current?.focus()
+    const trimmedOutput = outputResult.trim()
+    const isEditingLegacyWithoutDate = Boolean(
+      editingRow && !editingRow.entry_date,
+    )
+
+    if (!trimmedDate || !formWeekOf) {
+      setFormError('Please choose a valid date (Monday to Saturday).')
       return
     }
 
-    if (!formWeekOf) {
-      setFormError('Please choose a valid week date.')
+    if (getIsoDayOfWeek(trimmedDate) === 0) {
+      setFormError(
+        'Weekly Accomplishment Reports cover Monday to Saturday. Please select a date between Monday and Saturday.',
+      )
+      return
+    }
+
+    if (!trimmedDescription) {
+      setFormError('Please describe the activity or task performed.')
+      activityInputRef.current?.focus()
+      return
+    }
+
+    if (!isEditingLegacyWithoutDate && !trimmedOutput) {
+      setFormError('Please record the output or result of this activity.')
       return
     }
 
     if (editingRow && !isEditableSubmissionStatus(editingRow.status)) {
       setFormError('Approved accomplishments cannot be edited.')
       return
+    }
+
+    // Prevent duplicate daily row for the same date in the loaded week.
+    if (formWeekOf === selectedWeekOf) {
+      const conflictRow = items.find(
+        (row) =>
+          row.entry_date === trimmedDate &&
+          (!editingRow || row.id !== editingRow.id),
+      )
+      if (conflictRow) {
+        setFormError(
+          `An accomplishment entry for ${formatWeekdayCalendarDate(trimmedDate)} already exists. Edit that day's row instead.`,
+        )
+        return
+      }
     }
 
     setSaving(true)
@@ -291,24 +476,47 @@ export function AccomplishmentsPage() {
       nextAttachmentPath = uploadData?.path ?? filePath
     }
 
+    const derivedTitle =
+      isEditingLegacyWithoutDate && editingRow?.title?.trim()
+        ? editingRow.title.trim()
+        : deriveEntryTitle(trimmedDate, trimmedDescription)
+
     if (editingRow) {
       const wasReviewedBack = hasReviewerFeedbackStatus(editingRow.status)
       const previousAttachmentPath = editingRow.attachment_url
-      const { error: updateError } = await supabase
-        .from('accomplishments')
-        .update({
-          week_of: formWeekOf,
-          title: trimmedTitle,
-          description: trimmedDescription || null,
-          skills_acquired: trimmedSkills || null,
-          challenges_encountered: trimmedChallenges || null,
-          lessons_learned: trimmedLessons || null,
-          attachment_url: nextAttachmentPath,
-          ...getReviewResetPayload(editingRow.status),
-        })
-        .eq('id', editingRow.id)
-        .eq('intern_id', internId)
-        .in('status', ['pending', 'returned', 'rejected'])
+      const latestPayload = {
+        week_of: formWeekOf,
+        entry_date: trimmedDate,
+        title: derivedTitle,
+        description: trimmedDescription,
+        output_result: trimmedOutput || null,
+        attachment_url: nextAttachmentPath,
+        ...getReviewResetPayload(editingRow.status),
+      }
+      const legacyPayload = {
+        week_of: formWeekOf,
+        title: derivedTitle,
+        description: trimmedDescription,
+        attachment_url: nextAttachmentPath,
+        ...getReviewResetPayload(editingRow.status),
+      }
+
+      const { error: updateError } = await runWithSchemaFallback(
+        () =>
+          supabase
+            .from('accomplishments')
+            .update(latestPayload)
+            .eq('id', editingRow.id)
+            .eq('intern_id', internId)
+            .in('status', ['pending', 'returned', 'rejected']),
+        () =>
+          supabase
+            .from('accomplishments')
+            .update(legacyPayload)
+            .eq('id', editingRow.id)
+            .eq('intern_id', internId)
+            .in('status', ['pending', 'returned', 'rejected']),
+      )
 
       if (updateError) {
         setFormError(`Could not update accomplishment: ${updateError.message}`)
@@ -316,10 +524,10 @@ export function AccomplishmentsPage() {
         return
       }
 
-      if (previousAttachmentPath && previousAttachmentPath !== nextAttachmentPath) {
-        // Best-effort cleanup of the replaced/removed file: the update
-        // already succeeded, so a failed removal must never surface as a
-        // failed save.
+      if (
+        previousAttachmentPath &&
+        previousAttachmentPath !== nextAttachmentPath
+      ) {
         try {
           await supabase.storage
             .from('attachments')
@@ -331,30 +539,52 @@ export function AccomplishmentsPage() {
 
       setPageSuccess(
         wasReviewedBack
-          ? 'Accomplishment updated and resubmitted as pending.'
-          : 'Accomplishment updated.',
+          ? 'Daily accomplishment updated and resubmitted as pending.'
+          : 'Daily accomplishment updated.',
       )
     } else {
-      const { error: insertError } = await supabase
-        .from('accomplishments')
-        .insert({
-          intern_id: internId,
-          week_of: formWeekOf,
-          title: trimmedTitle,
-          description: trimmedDescription || null,
-          skills_acquired: trimmedSkills || null,
-          challenges_encountered: trimmedChallenges || null,
-          lessons_learned: trimmedLessons || null,
-          attachment_url: nextAttachmentPath,
-        })
+      const latestInsert = {
+        intern_id: internId,
+        week_of: formWeekOf,
+        entry_date: trimmedDate,
+        title: derivedTitle,
+        description: trimmedDescription,
+        output_result: trimmedOutput || null,
+        attachment_url: nextAttachmentPath,
+      }
+      const legacyInsert = {
+        intern_id: internId,
+        week_of: formWeekOf,
+        title: derivedTitle,
+        description: trimmedDescription,
+        attachment_url: nextAttachmentPath,
+      }
+
+      const { error: insertError } = await runWithSchemaFallback(
+        () => supabase.from('accomplishments').insert(latestInsert),
+        () => supabase.from('accomplishments').insert(legacyInsert),
+      )
 
       if (insertError) {
-        setFormError(`Could not save accomplishment: ${insertError.message}`)
+        const isDuplicateDate =
+          insertError.code === '23505' ||
+          String(insertError.message ?? '').includes(
+            'idx_accomplishments_intern_entry_date_unique',
+          )
+        setFormError(
+          isDuplicateDate
+            ? `An accomplishment entry for ${formatWeekdayCalendarDate(trimmedDate)} already exists. Edit that day's row instead.`
+            : isMissingSchemaColumnError(insertError)
+              ? 'Database schema revision 9 must be applied to record daily dates and outputs.'
+              : `Could not save accomplishment: ${insertError.message}`,
+        )
         setSaving(false)
         return
       }
 
-      setPageSuccess('Accomplishment added.')
+      setPageSuccess(
+        `Daily accomplishment added for ${formatWeekdayCalendarDate(trimmedDate)}.`,
+      )
     }
 
     const savedWeekOf = formWeekOf
@@ -368,6 +598,55 @@ export function AccomplishmentsPage() {
     } else {
       setReloadCounter((count) => count + 1)
     }
+  }
+
+  async function handleSaveWeeklyReflection(event) {
+    event.preventDefault()
+
+    if (!supabase || !internId || !selectedWeekOf) {
+      setReflectionError('Unable to verify your intern profile session.')
+      return
+    }
+
+    if (isWeekReflectionLocked) {
+      setReflectionError(
+        'This weekly report is already approved and its reflection is locked.',
+      )
+      return
+    }
+
+    setSavingReflection(true)
+    setReflectionError('')
+    setReflectionSuccess('')
+
+    const { error } = await supabase
+      .from('weekly_accomplishment_reflections')
+      .upsert(
+        {
+          intern_id: internId,
+          week_of: selectedWeekOf,
+          skills_acquired: activeSkills.trim() || null,
+          challenges_encountered: activeChallenges.trim() || null,
+          lessons_learned: activeLessons.trim() || null,
+        },
+        { onConflict: 'intern_id,week_of' },
+      )
+
+    setSavingReflection(false)
+
+    if (error) {
+      setReflectionError(
+        isMissingSchemaRelationError(error)
+          ? 'Apply supabase/schema-revision-9.sql in the Supabase SQL Editor to enable saving weekly reflections.'
+          : `Could not save weekly reflection: ${error.message}`,
+      )
+      return
+    }
+
+    setReflectionSuccess(
+      `Weekly reflection saved for ${formatWeekRange(selectedWeekOf, 5)}.`,
+    )
+    setReloadCounter((count) => count + 1)
   }
 
   async function handleOpenAttachment(row) {
@@ -403,6 +682,11 @@ export function AccomplishmentsPage() {
     }
   }
 
+  const weekRangeLabel = formatWeekRange(selectedWeekOf, 5)
+  const formWeekRangeLabel = formWeekOf ? formatWeekRange(formWeekOf, 5) : ''
+  const weekStartIso = selectedWeekOf
+  const weekSaturdayIso = selectedWeekOf ? shiftIsoDate(selectedWeekOf, 5) : ''
+
   return (
     <div className="max-w-6xl space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -414,20 +698,30 @@ export function AccomplishmentsPage() {
           >
             Accomplishments
           </h1>
-          <p className="mt-1.5 max-w-[60ch] text-sm leading-[1.55] text-ink-muted">
-            Record weekly internship deliverables and attach supporting files
-            for supervisor review.
+          <p className="mt-1.5 max-w-[64ch] text-sm leading-[1.55] text-ink-muted">
+            Record daily internship activities and outputs (Monday to Saturday)
+            and complete one weekly reflection per reporting period.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={openCreateDialog}
-          className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-[5px] bg-accent-solid px-4 py-2 text-sm font-medium text-on-accent hover:bg-accent-solid-hover"
-        >
-          <PlusIcon className="size-4" />
-          <span>Add accomplishment</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={!hasWeeklyDocumentData}
+            onClick={() => setDocumentOpen(true)}
+            className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-[5px] border border-rule bg-surface px-4 py-2 text-sm font-medium text-ink hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-55"
+          >
+            View weekly document
+          </button>
+          <button
+            type="button"
+            onClick={openCreateDialog}
+            className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-[5px] bg-accent-solid px-4 py-2 text-sm font-medium text-on-accent hover:bg-accent-solid-hover"
+          >
+            <PlusIcon className="size-4" />
+            <span>Add daily entry</span>
+          </button>
+        </div>
       </header>
 
       <div className={pageSuccess || listError ? 'space-y-3' : ''}>
@@ -441,36 +735,39 @@ export function AccomplishmentsPage() {
       >
         <div className="flex flex-col gap-4 border-b border-rule bg-surface-subtle px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <h2
                 id="accomplishments-list-heading"
                 className="text-base font-semibold tabular-nums text-ink"
               >
-                {formatWeekRange(selectedWeekOf)}
+                {weekRangeLabel}
               </h2>
               <span className="text-xs tabular-nums text-ink-muted">
-                Week starting {selectedWeekOf}
+                Monday – Saturday ({weekStartIso} to {weekSaturdayIso})
               </span>
+              {!loadingList && items.length > 0 ? (
+                <StatusBadge status={weeklyStatus.statusKey} />
+              ) : null}
             </div>
 
             {!loadingList && items.length > 0 ? (
               <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs tabular-nums text-ink-muted">
                 <span className="font-medium text-ink">
                   {items.length}{' '}
-                  {items.length === 1 ? 'submission' : 'submissions'}
+                  {items.length === 1 ? 'daily entry' : 'daily entries'}
                 </span>
                 <span aria-hidden="true" className="h-3 w-px bg-rule" />
-                <span>{statusCounts.pending} pending</span>
+                <span>{weeklyStatus.pendingCount} pending</span>
                 <span aria-hidden="true" className="h-3 w-px bg-rule" />
-                <span>{statusCounts.returned} returned</span>
-                {statusCounts.rejected > 0 ? (
+                <span>{weeklyStatus.returnedCount} returned</span>
+                {weeklyStatus.rejectedCount > 0 ? (
                   <>
                     <span aria-hidden="true" className="h-3 w-px bg-rule" />
-                    <span>{statusCounts.rejected} rejected</span>
+                    <span>{weeklyStatus.rejectedCount} rejected</span>
                   </>
                 ) : null}
                 <span aria-hidden="true" className="h-3 w-px bg-rule" />
-                <span>{statusCounts.approved} approved</span>
+                <span>{weeklyStatus.approvedCount} approved</span>
               </div>
             ) : null}
           </div>
@@ -495,6 +792,8 @@ export function AccomplishmentsPage() {
                 onClick={() => {
                   setAttachmentError('')
                   setPageSuccess('')
+                  setReflectionError('')
+                  setReflectionSuccess('')
                   setFilterDate(getTodayIsoDate())
                 }}
                 className="inline-flex min-h-9 items-center border-e border-rule px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
@@ -523,6 +822,8 @@ export function AccomplishmentsPage() {
                 if (event.target.value) {
                   setAttachmentError('')
                   setPageSuccess('')
+                  setReflectionError('')
+                  setReflectionSuccess('')
                   setFilterDate(event.target.value)
                 }
               }}
@@ -547,11 +848,11 @@ export function AccomplishmentsPage() {
               </span>
               <div>
                 <p className="text-sm font-semibold text-ink">
-                  No accomplishments recorded for this week
+                  No daily accomplishments recorded for this week
                 </p>
                 <p className="mt-1 text-sm text-ink-muted">
-                  Add an entry for {formatWeekRange(selectedWeekOf)} to submit
-                  it for supervisor review.
+                  Add one row per day (Monday to Saturday) for {weekRangeLabel}{' '}
+                  to build your Weekly Accomplishment Report.
                 </p>
               </div>
             </div>
@@ -562,7 +863,7 @@ export function AccomplishmentsPage() {
               className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-[5px] border border-rule bg-surface px-3.5 text-sm font-medium text-ink hover:bg-surface-subtle"
             >
               <PlusIcon className="size-4" />
-              <span>Add accomplishment</span>
+              <span>Add daily entry</span>
             </button>
           </div>
         ) : (
@@ -574,18 +875,24 @@ export function AccomplishmentsPage() {
           >
             <table className="submission-table is-compact">
               <caption className="visually-hidden">
-                Accomplishments for the week of {formatWeekRange(selectedWeekOf)}
+                Daily accomplishments for the reporting week {weekRangeLabel}
               </caption>
               <thead>
                 <tr>
-                  <th scope="col">Accomplishment</th>
-                  <th scope="col" className="w-56 whitespace-nowrap">
+                  <th scope="col" className="w-40 whitespace-nowrap">
+                    Date
+                  </th>
+                  <th scope="col">Activities Performed</th>
+                  <th scope="col" className="w-60">
+                    Output / Result
+                  </th>
+                  <th scope="col" className="w-44 whitespace-nowrap">
                     Attachment
                   </th>
-                  <th scope="col" className="w-36 whitespace-nowrap">
+                  <th scope="col" className="w-32 whitespace-nowrap">
                     Status
                   </th>
-                  <th scope="col" className="col-action w-56 whitespace-nowrap">
+                  <th scope="col" className="col-action w-52 whitespace-nowrap">
                     Action
                   </th>
                 </tr>
@@ -594,16 +901,39 @@ export function AccomplishmentsPage() {
                 {items.map((row) => {
                   const editable = isEditableSubmissionStatus(row.status)
                   const signedUrl = signedUrlsById[row.id]
+                  const activitySummary =
+                    row.description?.trim() || row.title?.trim() || '—'
+                  const outputText = row.output_result?.trim() || ''
 
                   return (
                     <tr key={row.id}>
                       <td
-                        data-label="Accomplishment"
+                        data-label="Date"
+                        className="align-middle! whitespace-nowrap"
+                      >
+                        {row.entry_date ? (
+                          <span className="text-sm font-medium tabular-nums text-ink">
+                            {formatWeekdayCalendarDate(row.entry_date)}
+                          </span>
+                        ) : (
+                          <div>
+                            <p className="text-sm font-medium text-ink">
+                              Legacy entry
+                            </p>
+                            <p className="text-xs italic text-ink-muted">
+                              Daily date not recorded
+                            </p>
+                          </div>
+                        )}
+                      </td>
+
+                      <td
+                        data-label="Activities Performed"
                         className="align-middle!"
                       >
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-ink break-words">
-                            {row.title}
+                          <p className="line-clamp-2 text-sm text-ink break-words">
+                            {activitySummary}
                           </p>
                           {hasReviewerFeedbackStatus(row.status) ? (
                             <ReturnedRemarks
@@ -612,6 +942,21 @@ export function AccomplishmentsPage() {
                             />
                           ) : null}
                         </div>
+                      </td>
+
+                      <td
+                        data-label="Output / Result"
+                        className="align-middle!"
+                      >
+                        {outputText ? (
+                          <p className="line-clamp-2 text-sm text-ink-muted break-words">
+                            {outputText}
+                          </p>
+                        ) : (
+                          <span className="text-xs italic text-ink-muted">
+                            Not provided
+                          </span>
+                        )}
                       </td>
 
                       <td data-label="Attachment" className="align-middle!">
@@ -669,7 +1014,9 @@ export function AccomplishmentsPage() {
                               <span>Edit</span>
                               <span className="visually-hidden">
                                 {' '}
-                                {row.title}
+                                {row.entry_date
+                                  ? formatWeekdayCalendarDate(row.entry_date)
+                                  : row.title}
                               </span>
                             </button>
                           ) : (
@@ -679,14 +1026,10 @@ export function AccomplishmentsPage() {
                           )}
                           <button
                             type="button"
-                            onClick={() => setDocumentRow(row)}
+                            onClick={() => setDocumentOpen(true)}
                             className="inline-flex min-h-8 items-center justify-center whitespace-nowrap rounded-[5px] border border-rule bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
                           >
                             <span>View document</span>
-                            <span className="visually-hidden">
-                              {' '}
-                              for {row.title}
-                            </span>
                           </button>
                         </div>
                       </td>
@@ -699,13 +1042,108 @@ export function AccomplishmentsPage() {
         )}
       </section>
 
+      {/* Weekly Reflection Section — completed once for the whole week */}
+      <section
+        aria-labelledby="weekly-reflection-heading"
+        className="overflow-hidden rounded-[6px] border border-rule bg-surface"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rule bg-surface-subtle px-5 py-3.5">
+          <div>
+            <h2
+              id="weekly-reflection-heading"
+              className="text-sm font-semibold text-ink"
+            >
+              Learning and Reflection — {weekRangeLabel}
+            </h2>
+            <p className="mt-0.5 text-xs text-ink-muted">
+              Complete once for the entire reporting week. These reflections
+              appear on your Weekly Accomplishment Report.
+            </p>
+          </div>
+          {isWeekReflectionLocked ? (
+            <span className="inline-flex items-center rounded-[5px] border border-success-border/45 bg-success-tint px-2.5 py-1 text-xs font-medium text-success">
+              Locked — Weekly report approved
+            </span>
+          ) : null}
+        </div>
+
+        <form onSubmit={handleSaveWeeklyReflection} className="space-y-4 p-5">
+          <div
+            className={reflectionSuccess || reflectionError ? 'space-y-2' : ''}
+          >
+            <AlertMessage message={reflectionSuccess} variant="success" />
+            <AlertMessage message={reflectionError} variant="error" />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <FormField
+              id="weekly-reflection-skills"
+              name="skills_acquired"
+              label="Skills Acquired"
+              multiline
+              rows={3}
+              disabled={loadingList || isWeekReflectionLocked}
+              placeholder="Technical or workplace skills developed during this reporting week."
+              value={activeSkills}
+              onChange={(event) =>
+                updateReflectionField('skills', event.target.value)
+              }
+            />
+
+            <FormField
+              id="weekly-reflection-challenges"
+              name="challenges_encountered"
+              label="Challenges Encountered"
+              multiline
+              rows={3}
+              disabled={loadingList || isWeekReflectionLocked}
+              placeholder="Problems, blockers, or difficulties experienced this week."
+              value={activeChallenges}
+              onChange={(event) =>
+                updateReflectionField('challenges', event.target.value)
+              }
+            />
+          </div>
+
+          <FormField
+            id="weekly-reflection-lessons"
+            name="lessons_learned"
+            label="Lessons Learned / Next Steps"
+            multiline
+            rows={3}
+            disabled={loadingList || isWeekReflectionLocked}
+            placeholder="Key takeaways from this week and planned next steps."
+            value={activeLessons}
+            onChange={(event) =>
+              updateReflectionField('lessons', event.target.value)
+            }
+          />
+
+          {!isWeekReflectionLocked ? (
+            <div className="flex flex-wrap items-center justify-end gap-2.5 border-t border-rule pt-4">
+              <button
+                type="submit"
+                disabled={loadingList || savingReflection}
+                className="inline-flex min-h-10 items-center justify-center rounded-[5px] bg-accent-solid px-4 text-sm font-medium text-on-accent hover:bg-accent-solid-hover disabled:cursor-not-allowed disabled:opacity-65"
+              >
+                {savingReflection
+                  ? 'Saving reflection…'
+                  : 'Save weekly reflection'}
+              </button>
+            </div>
+          ) : null}
+        </form>
+      </section>
+
       <SubmissionDialog
         open={dialogOpen}
-        title={editingRow ? 'Edit accomplishment' : 'Add accomplishment'}
+        title={
+          editingRow ? 'Edit daily accomplishment' : 'Add daily accomplishment'
+        }
         description={
           hasReviewerFeedbackStatus(editingRow?.status)
-            ? 'Saving changes resets this entry to Pending for supervisor re-review.'
-            : 'Entries are grouped by the Monday of the selected week.'
+            ? 'Saving changes resets this daily entry to Pending for supervisor re-review.'
+            : 'Record one daily row (Monday to Saturday) with the activity performed and its output or result.'
         }
         onClose={handleCloseDialog}
       >
@@ -714,32 +1152,14 @@ export function AccomplishmentsPage() {
         </div>
 
         <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
-          <FormField
-            inputRef={titleInputRef}
-            id="accomplishment-title"
-            name="title"
-            label="Title"
-            type="text"
-            autoFocus
-            required
-            maxLength={200}
-            placeholder="e.g. Implemented API validation module"
-            validationMessage="Enter a title for this accomplishment."
-            value={title}
-            onChange={(event) => {
-              setTitle(event.target.value)
-              if (formError) setFormError('')
-            }}
-          />
-
-          <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[11.5rem_1fr]">
+          <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[12rem_1fr]">
             <FormField
-              id="accomplishment-week-date"
-              name="week_date"
-              label="Week date"
+              id="accomplishment-entry-date"
+              name="entry_date"
+              label="Activity date"
               type="date"
               required
-              validationMessage="Choose a date within the target week."
+              validationMessage="Choose the date (Monday to Saturday) the activity was performed."
               value={formDate}
               onChange={(event) => {
                 setFormDate(event.target.value)
@@ -747,22 +1167,25 @@ export function AccomplishmentsPage() {
               }}
             />
             <div className="flex min-h-11 flex-col justify-center rounded-[5px] border border-rule bg-surface-subtle px-3.5 py-2">
-              <span className="text-xs text-ink-muted">Assigned week</span>
+              <span className="text-xs text-ink-muted">
+                Reporting period (Mon – Sat)
+              </span>
               <span className="text-xs font-medium tabular-nums text-ink">
-                {formWeekOf
-                  ? `${formatWeekRange(formWeekOf)} (${formWeekOf})`
-                  : 'Select a date'}
+                {formWeekRangeLabel || 'Select a date'}
               </span>
             </div>
           </div>
 
           <FormField
+            inputRef={activityInputRef}
             id="accomplishment-description"
             name="description"
-            label="Activities performed"
+            label="Activities Performed"
             multiline
-            rows={3}
-            placeholder="List the activities you performed and the work you completed for this week."
+            rows={4}
+            required
+            placeholder="Describe the activity or task you performed on this day."
+            validationMessage="Enter the activity or task performed."
             value={description}
             onChange={(event) => {
               setDescription(event.target.value)
@@ -771,43 +1194,17 @@ export function AccomplishmentsPage() {
           />
 
           <FormField
-            id="accomplishment-skills-acquired"
-            name="skills_acquired"
-            label="Skills acquired"
+            id="accomplishment-output-result"
+            name="output_result"
+            label="Output / Result"
             multiline
             rows={3}
-            placeholder="Skills you learned or improved this week."
-            value={skillsAcquired}
+            required={!editingRow || Boolean(editingRow.entry_date)}
+            placeholder="Describe the concrete deliverable, completed output, or result."
+            validationMessage="Enter the output or result of this activity."
+            value={outputResult}
             onChange={(event) => {
-              setSkillsAcquired(event.target.value)
-              if (formError) setFormError('')
-            }}
-          />
-
-          <FormField
-            id="accomplishment-challenges-encountered"
-            name="challenges_encountered"
-            label="Challenges encountered"
-            multiline
-            rows={3}
-            placeholder="Problems or difficulties you encountered."
-            value={challengesEncountered}
-            onChange={(event) => {
-              setChallengesEncountered(event.target.value)
-              if (formError) setFormError('')
-            }}
-          />
-
-          <FormField
-            id="accomplishment-lessons-learned"
-            name="lessons_learned"
-            label="Lessons learned"
-            multiline
-            rows={3}
-            placeholder="What you learned from the experience."
-            value={lessonsLearned}
-            onChange={(event) => {
-              setLessonsLearned(event.target.value)
+              setOutputResult(event.target.value)
               if (formError) setFormError('')
             }}
           />
@@ -817,7 +1214,7 @@ export function AccomplishmentsPage() {
               htmlFor="accomplishment-attachment"
               className="text-sm font-medium leading-[1.4] text-ink"
             >
-              Attachment (optional)
+              Supporting attachment (optional)
             </label>
             <span
               id="accomplishment-attachment-hint"
@@ -895,22 +1292,32 @@ export function AccomplishmentsPage() {
                 ? 'Saving…'
                 : editingRow
                   ? 'Save changes'
-                  : 'Add accomplishment'}
+                  : 'Add daily entry'}
             </button>
           </div>
         </form>
       </SubmissionDialog>
 
       <AccomplishmentDocumentDialog
-        open={Boolean(documentRow)}
-        onClose={() => setDocumentRow(null)}
-        row={documentRow}
+        open={documentOpen}
+        onClose={() => setDocumentOpen(false)}
+        rows={items}
+        weekOf={selectedWeekOf}
+        weeklyReflection={reflectionRow}
         internName={profile?.full_name}
         studentIdNo={profile?.student_id_no}
         course={profile?.course}
+        yearLevel={profile?.year_level}
         schoolName={profile?.school_name}
+        internshipType={profile?.internship_type}
+        hostOrganization={resolveHostOrganizationName(profile)}
         companyName={profile?.company_name}
+        departmentOffice={profile?.department_office}
         supervisorName={supervisorName}
+        reviewerName={weeklyStatus.isApproved ? supervisorName : ''}
+        requiredHours={profile?.required_hours}
+        internshipStartDate={profile?.internship_start_date}
+        internshipEndDate={profile?.internship_end_date}
       />
     </div>
   )
