@@ -551,15 +551,20 @@ export function TasksPage() {
             aria-labelledby="tasks-list-heading"
             className="table-wrapper"
           >
-            <table className="submission-table is-compact">
+            <table className="submission-table is-compact intern-tasks-table">
               <caption className="visually-hidden">
                 Supervisor-assigned tasks and completion submission status
               </caption>
+              <colgroup>
+                <col className="intern-tasks-col-main" />
+                <col className="intern-tasks-col-deadline" />
+                <col className="intern-tasks-col-priority" />
+                <col className="intern-tasks-col-status" />
+                <col className="intern-tasks-col-action" />
+              </colgroup>
               <thead>
                 <tr>
-                  <th scope="col" className="w-full min-w-[18rem]">
-                    Task & instructions
-                  </th>
+                  <th scope="col">Task & instructions</th>
                   <th scope="col" className="whitespace-nowrap">
                     Deadline
                   </th>
@@ -605,17 +610,20 @@ export function TasksPage() {
 
                   return (
                     <tr key={row.id}>
-                      <td data-label="Task & instructions">
-                        <div className="min-w-0 max-w-[60ch]">
-                          <p className="text-sm font-semibold leading-snug text-ink">
+                      <th
+                        scope="row"
+                        className="intern-task-primary-cell font-normal"
+                      >
+                        <div className="min-w-0 w-full">
+                          <p className="text-sm font-semibold leading-snug text-ink break-words">
                             {row.title}
                           </p>
-                          <p className="mt-0.5 text-xs text-ink-muted">
+                          <p className="mt-0.5 text-xs font-normal text-ink-muted">
                             Assigned by {assignerName}
                           </p>
 
                           {row.description ? (
-                            <p className="mt-2 whitespace-pre-line text-sm leading-[1.55] text-ink-muted text-pretty break-words">
+                            <p className="mt-2 whitespace-pre-line text-sm font-normal leading-[1.55] text-ink-muted text-pretty break-words">
                               {row.description}
                             </p>
                           ) : null}
@@ -623,7 +631,7 @@ export function TasksPage() {
                           {row.completion_description ||
                           row.submission_attachment_url ||
                           row.submitted_at ? (
-                            <div className="mt-3 rounded-e-[5px] border-s-2 border-accent/45 bg-surface-subtle/80 px-3.5 py-2.5 text-xs">
+                            <div className="mt-3 w-full rounded-[5px] border border-rule/80 border-s-2 border-s-accent/55 bg-surface-subtle/80 px-3.5 py-2.5 text-xs font-normal">
                               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
                                 <p className="font-semibold text-ink">
                                   Your submission
@@ -690,7 +698,7 @@ export function TasksPage() {
                             />
                           ) : null}
                         </div>
-                      </td>
+                      </th>
 
                       <td data-label="Deadline" className="whitespace-nowrap">
                         <div className="flex flex-col">
@@ -731,29 +739,31 @@ export function TasksPage() {
                         data-label="Action"
                         className="col-action whitespace-nowrap"
                       >
-                        {editable ? (
-                          <button
-                            type="button"
-                            onClick={() => openSubmissionDialog(row)}
-                            className={`inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 rounded-[5px] px-3.5 text-xs font-medium whitespace-nowrap transition-colors ${
-                              needsAction
-                                ? 'bg-accent-solid text-on-accent hover:bg-accent-solid-hover'
-                                : 'border border-rule bg-surface text-ink hover:bg-surface-subtle'
-                            }`}
-                          >
-                            <EditIcon className="size-3.5" />
-                            <span>{actionLabel}</span>
-                            <span className="visually-hidden">
-                              {' '}
-                              for {row.title}
+                        <div className="intern-task-action-wrap">
+                          {editable ? (
+                            <button
+                              type="button"
+                              onClick={() => openSubmissionDialog(row)}
+                              className={`inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 rounded-[5px] px-3.5 text-xs font-medium whitespace-nowrap transition-colors ${
+                                needsAction
+                                  ? 'bg-accent-solid text-on-accent hover:bg-accent-solid-hover'
+                                  : 'border border-rule bg-surface text-ink hover:bg-surface-subtle'
+                              }`}
+                            >
+                              <EditIcon className="size-3.5" />
+                              <span>{actionLabel}</span>
+                              <span className="visually-hidden">
+                                {' '}
+                                for {row.title}
+                              </span>
+                            </button>
+                          ) : (
+                            <span className="inline-flex min-h-9 items-center gap-1.5 text-xs font-medium text-ink-muted">
+                              <LockIcon className="size-3.5" />
+                              <span>Locked</span>
                             </span>
-                          </button>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-muted">
-                            <LockIcon className="size-3.5" />
-                            <span>Locked</span>
-                          </span>
-                        )}
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )

@@ -988,6 +988,63 @@ dialog.review-drawer-dialog[open]:where(:not([data-closing])) {
   .submission-table.supervisor-compact-table :is(thead, tbody, tfoot) tr > :last-child {
     padding-inline-end: 1.25rem;
   }
+
+  .submission-table.intern-tasks-table {
+    table-layout: fixed;
+    min-inline-size: 54rem;
+  }
+
+  .submission-table.intern-tasks-table col.intern-tasks-col-main {
+    inline-size: auto;
+  }
+
+  .submission-table.intern-tasks-table col.intern-tasks-col-deadline {
+    inline-size: 9.25rem;
+  }
+
+  .submission-table.intern-tasks-table col.intern-tasks-col-priority {
+    inline-size: 6.5rem;
+  }
+
+  .submission-table.intern-tasks-table col.intern-tasks-col-status {
+    inline-size: 9.25rem;
+  }
+
+  .submission-table.intern-tasks-table col.intern-tasks-col-action {
+    inline-size: 10.25rem;
+  }
+
+  .submission-table.intern-tasks-table thead th {
+    white-space: nowrap;
+    text-wrap: nowrap;
+    padding: 0.75rem 0.875rem;
+  }
+
+  .submission-table.intern-tasks-table tbody :is(th, td) {
+    padding: 1rem 0.875rem;
+    vertical-align: middle;
+  }
+
+  .submission-table.intern-tasks-table tbody th.intern-task-primary-cell {
+    position: static;
+    font-weight: 400;
+    padding-inline-end: 1.5rem;
+  }
+
+  .submission-table.intern-tasks-table :is(thead, tbody) tr > :first-child {
+    padding-inline-start: 1.25rem;
+  }
+
+  .submission-table.intern-tasks-table :is(thead, tbody) tr > :last-child {
+    padding-inline-end: 1.25rem;
+  }
+
+  .submission-table.intern-tasks-table .intern-task-action-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    inline-size: 100%;
+  }
 }
 
 .submission-table.submissions-scroll-table thead th,
@@ -1196,6 +1253,35 @@ dialog.review-drawer-dialog[open]:where(:not([data-closing])) {
     font-weight: 600;
     color: var(--color-ink-muted);
     padding-block-start: 0.125rem;
+  }
+
+  .submission-table.intern-tasks-table tbody tr {
+    border-block-end: 2px solid var(--color-rule);
+  }
+
+  .submission-table.intern-tasks-table tbody th.intern-task-primary-cell {
+    position: static;
+    padding: 1rem;
+    background-color: var(--color-surface);
+    font-weight: 400;
+    border-block-end: 1px solid color-mix(in oklab, var(--color-rule) 65%, transparent);
+  }
+
+  .submission-table.intern-tasks-table.is-compact tbody td {
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+    align-items: center;
+    justify-items: start;
+    padding: 0.625rem 1rem;
+  }
+
+  .submission-table.intern-tasks-table tbody td[data-label]::before {
+    padding-block-start: 0;
+  }
+
+  .submission-table.intern-tasks-table tbody .intern-task-action-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
   }
 }
 
